@@ -12,7 +12,7 @@ export function printHelp(): void {
   console.log("bun-bot v" + VERSION + " — 自我认知为 Bun.js 运行时的 agent（DeepSeek Function Calling + Bun 执行）");
   console.log("");
   console.log("用法:");
-  console.log('  bun-bot [--stream] [--self] [--resume] [--interactive] "任务"   启动 agent（--resume/--interactive 可不带任务）');
+  console.log('  bun-bot [--no-stream] [--self] [--resume] [--interactive] "任务"   启动 agent（默认 SSE 流式输出，--no-stream 关闭改一次性输出；--resume/--interactive 可不带任务）');
   console.log("  bun-bot init                                    在当前目录生成项目配置（AGENTS.md 模板 + .bunbot.json + .gitignore 条目）");
   console.log("  bun-bot --version / -v                          显示版本号");
   console.log("  bun-bot --help / -h                             显示本帮助");
