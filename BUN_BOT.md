@@ -1,5 +1,11 @@
 # BUN_BOT.md — bun-bot 实现细节（与 AGENTS.md 同级加载）
 
+> **适用范围**：本文档仅由 **bun-bot** 自动加载（与 AGENTS.md 同级，进 [项目] 区块最前，优先级最高）。
+> **其他 agent 无需阅读本文件** —— 只需遵守 AGENTS.md 里的通用约定（`bun test` 全绿、conventional commits、
+> 中文注释与风格、learn/ 只读、docs/ 同步）；本文件中的 bun-bot 特有机制（`BUN_BOT_*` 环境变量、
+> 自动快照 / 自动回滚 / 审计日志、`--self` / `--resume` / `--interactive`、`src/tools.ts` 工具注册、发布流程）
+> 是 bun-bot 自身实现细节，**请勿照做或模仿**（如「测试失败就 reset --hard 回滚」「写文件前手动 commit」）。
+>
 > 本文档是 **bun-bot 自研实现细节**（运行/构建、可调变量、测试闸门、代码约定、架构决策、踩坑），
 > 由 bun-bot 启动时与 AGENTS.md 一并加载（[项目] 区块，优先级最高）。
 > **AGENTS.md 是通用项目契约**（用户与 agent 之间的约定），bun-bot 特有的工程细节在这里。

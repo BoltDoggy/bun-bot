@@ -14,7 +14,7 @@
 | 任务模式 | ✅ P2-2 已完成：`--self` 注入 [任务模式] 区块（先 plan 后执行、逐项勾选、未完成计划续跑提示）；`update_plan` 工具全量覆盖式创建/勾选计划；`AgentState.activePlan` 持久化 + MEMORY.md「当前任务计划」区块；主循环结束重载 state 防覆盖 |
 | 上下文预算 | ✅ P2-3 已完成：`budget.ts`（`estimateTokens` 中英混合离线估算 / `estimateMessagesTokens` / `compressContext` 最轻档 tool result clearing）；主循环每轮检查预算，超限压缩最早 tool 结果（保留前缀 + 清理标记，消息结构不动）；告警写回 `AgentState.contextWarnings`（[记忆] 区块 + MEMORY.md「上下文预算告警」区块可见） |
 | checkpoint | ✅ P2-4 已完成：`--resume` 会话级断点续跑 —— `AGENT_CHECKPOINT.json` 持久化当前会话消息历史（不含 system，恢复时重建），每次消息变更落盘；中断（Ctrl+C / 超迭代 / 崩溃）后 `--resume` 恢复完整上下文继续；任务正常完成自动清除 |
-| 项目级指令 | `AGENTS.md`（通用契约）+ `BUN_BOT.md`（实现细节，P6-2）（均可选）：由 `readAgentDirective` 一并加载进 [项目] 区块最前，[规则] 第 5 条声明其约束力（优先级高于 README/docs）；不存在时静默跳过 |
+| 项目级指令 | `AGENTS.md`（通用契约，所有 agent 遵守）+ `BUN_BOT.md`（bun-bot 实现细节，仅 bun-bot 生效，P6-2）（均可选）：由 `readAgentDirective` 一并加载进 [项目] 区块最前，[规则] 第 5 条声明其约束力（优先级高于 README/docs）；不存在时静默跳过 |
 | skills | 1 个内置：`web-search` v2（search.ts / self-test.ts / samples/），索引进 [能力] 区块，细节按需 read_file；P6-3 生态对齐：支持 `.agents/skills/`（frontmatter 自描述）双目录兼容，skillsDir 可配置 |
 | 模型 | `deepseek-v4-flash`（`BUN_BOT_MODEL` 可换，如 `deepseek-v4-pro`） |
 | 最大迭代 | 150 轮（`BUN_BOT_MAX_ITERATIONS` 可调） |
@@ -114,6 +114,7 @@ tests/                self-test 用例 104 / 598 expect（tools + memory + check
 | 加载时机 | `loadProjectContext()` 读取工作区根 `AGENTS.md` + `BUN_BOT.md`（`readAgentDirective()` 数组语义，P6-2），存在则置于项目认知最前 |
 | 优先级 | 高于 README / docs：它是用户与 agent 之间的项目级契约 |
 | 约束声明 | `buildSystemPrompt` 的 [规则] 第 5 条：内容冲突时以 AGENTS.md / BUN_BOT.md 为准 |
+| 适用范围 | AGENTS.md 是通用项目契约（所有 agent 遵守）；BUN_BOT.md 仅 bun-bot 自动加载，其他 agent 无需阅读 |
 | 上限 | 8000 字符截断提示（与 README 同级），需完整内容可 read_file |
 | 缺失时 | 返回 null / 静默跳过，老项目系统提示词不变 |
 

@@ -46,7 +46,7 @@ bun-bot "分析这个项目的结构并给出建议"
 ```
 
 > 可选：在项目根目录放一个 `AGENTS.md` 写入项目约定（如禁止改哪些文件、必须跑什么测试），
-> bun-bot 启动时会自动加载并优先遵守它（bun-bot 自研细节可放 `BUN_BOT.md`，两者一并加载）。
+> bun-bot 启动时会自动加载并优先遵守它（bun-bot 自研细节可放 `BUN_BOT.md`，**仅 bun-bot 自动加载**，其他 agent 无需阅读）。
 
 > 想参与开发 / 从源码跑？见下方「开发者视角 → 本地开发（从源码运行）」。
 
@@ -69,7 +69,7 @@ bun-bot "分析这个项目的结构并给出建议"
 - 🔁 **断点续跑（`--resume`）**：会话消息历史每次变更落盘，中断后恢复完整上下文继续，任务完成自动清除
 - 🧮 **长任务不爆上下文**：内置 token 预算，超限自动压缩最早的工具结果（消息结构不动、system 永不清理）
 - 💾 **跨会话记忆**：`AGENT_STATE.json`（机器态）+ `MEMORY.md`（人类可读版）本地持久化（`.bunbot/` 下，gitignore），重启后能引用上次决策
-- 🧭 **自我认知 + 项目级指令**：启动时加载 AGENTS.md + BUN_BOT.md（如有）+ README + docs + 文件树 + 记忆，系统提示词含「身份 / 能力 / 项目 / 记忆 / 规则」五区块；项目根目录的 `AGENTS.md`（通用契约）+ `BUN_BOT.md`（实现细节）是用户与 agent 的项目级指令，优先级最高
+- 🧭 **自我认知 + 项目级指令**：启动时加载 AGENTS.md + BUN_BOT.md（如有）+ README + docs + 文件树 + 记忆，系统提示词含「身份 / 能力 / 项目 / 记忆 / 规则」五区块；项目根目录的 `AGENTS.md`（通用契约，所有 agent 遵守）+ `BUN_BOT.md`（bun-bot 实现细节，仅 bun-bot 生效）是项目级指令，优先级最高
 - 🧩 **skills 组合操作库**：多步、有坑、会过时的操作固化成 SKILL.md（仓库内置 `skills/` 索引 + 生态 `skills` 约定 `.agents/skills/` frontmatter 自描述，双目录兼容，P6-3），按需加载、自带自测
 - 🛡️ **自修改安全（P3）**：`write_file` 落盘前自动 git 快照 + diff 摘要；写操作命令前自动快照；收尾自动跑测试、失败自动回滚到会话开始前 HEAD；每次工具调用入参/出参写审计日志
 - 🔒 **权限分级**：`auto` 全自动 / `ask` 写操作需确认（`allowCommands` 白名单放行）/ `readonly` 只读（写操作拒绝）；路径默认限制工作区内，危险命令黑名单直接拒绝
@@ -123,14 +123,14 @@ bun-bot "分析这个项目的结构并给出建议"
 
 ## 👩💻 开发者视角（扩展 / 构建 / 迭代 bun-bot）
 
-> 完整契约见项目根目录的 [AGENTS.md](./AGENTS.md)（通用项目契约）与 [BUN_BOT.md](./BUN_BOT.md)（bun-bot 实现细节：运行 / 构建 / 测试闸门 / 代码约定 / 架构决策 / 踩坑），两者同级加载、优先级最高，以下为速览。
+> 完整契约见项目根目录的 [AGENTS.md](./AGENTS.md)（通用项目契约，所有 agent 遵守）与 [BUN_BOT.md](./BUN_BOT.md)（bun-bot 实现细节：运行 / 构建 / 测试闸门 / 代码约定 / 架构决策 / 踩坑，**仅 bun-bot 自动加载**，其他 agent 无需阅读），优先级最高，以下为速览。
 
 ### 项目结构
 
 ```
 ├── index.ts            # 入口：CLI 命令拦截（init / --version / --help，API key 检查前）+ CLI 解析（--no-stream / --self / --resume / --interactive）+ run 子命令自举（编译产物自带运行时）+ runAgentLoop 主循环 + 记忆读写钩子
 ├── AGENTS.md            # 可选：项目级指令·通用契约（存在时自动加载，优先级最高）
-├── BUN_BOT.md            # 可选：项目级指令·bun-bot 实现细节（与 AGENTS.md 同级加载，P6-2）
+├── BUN_BOT.md            # 可选：项目级指令·bun-bot 实现细节（仅 bun-bot 自动加载，其他 agent 无需阅读，P6-2）
 ├── .github/
 │   └── workflows/
 │       └── build.yml   # P5 全平台构建：矩阵 6 平台 + 独立 release job（tag v* 统一发布 + 手动触发出 artifact）
