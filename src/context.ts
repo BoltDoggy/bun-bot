@@ -1,5 +1,5 @@
 /**
- * context.ts — 系统提示词组装（P0 + skills 索引 + P2-2 任务模式 + P2-3 预算告警）
+ * context.ts — 系统提示词组装（P0 + skills 索引 + P2-2 任务模式 + P2-3 预算告警 + P3 安全）
  *
  * 结构（§4）：[身份] [能力] [项目] [记忆] [规则]
  * 目标：agent 启动时能准确说出"我是谁、项目结构、上次干了什么、有什么 skills 可用"。
@@ -11,6 +11,8 @@
  *              [记忆] 区块展示 activePlan 进度（中断/重启后可继续）。
  * P2-3 上下文预算：[记忆] 区块展示 contextWarnings（超限压缩告警历史），
  *              让 agent 重启后能感知"上次长任务触发了多少次压缩"。
+ * P3 安全（质量与防护）：[规则] 声明测试闸门（收尾自动跑测试、失败自动回滚）、
+ *              run_bash 写操作自动快照、危险命令拒绝、路径限制工作区内、审计日志。
  */
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -118,7 +120,7 @@ export function buildSystemPrompt(ctx: ContextInput): string {
   b.push("- read_file: 读取工作区文件（UTF-8），默认完整返回 64KB，大文件可 offset 续读。示例：{\\\"path\\\":\\\"src/tools.ts\\\"}、{\\\"path\\\":\\\"src/tools.ts\\\",\\\"offset\\\":65536}");
   b.push("- write_file: 写工作区文件，自动 git 快照 + diff 摘要。改自己代码就靠它。示例：{\\\"path\\\":\\\"src/hello.ts\\\",\\\"content\\\":\\\"console.log('hi')\\\"}");
   b.push("- list_dir: 列目录（-a 显示隐藏文件、depth 限制递归深度）。示例：{\\\"path\\\":\\\".\\\",\\\"all\\\":true,\\\"depth\\\":2}");
-  b.push("- run_bash: 执行 shell 命令，cwd 默认工作区，可跑 git / bun test 等。示例：{\\\"command\\\":\\\"bun test\\\"}、{\\\"command\\\":\\\"git status --short\\\"}");
+  b.push("- run_bash: 执行 shell 命令，cwd 默认工作区，可跑 git / bun test 等；写操作命令前自动 git 快照；危险命令会被拒绝。示例：{\\\"command\\\":\\\"bun test\\\"}、{\\\"command\\\":\\\"git status --short\\\"}");
   b.push("- update_plan: 更新任务计划（任务模式）。全量覆盖式：首轮创建（title + 分步 items），每完成一步提交完整计划并勾选 done，进度写回状态跨会话保存。示例：{\\\"title\\\":\\\"新增工具\\\",\\\"items\\\":[{\\\"text\\\":\\\"注册\\\",\\\"done\\\":false}]}");
   const sk = skillsIndex();
   if (sk) {
@@ -135,9 +137,11 @@ export function buildSystemPrompt(ctx: ContextInput): string {
   b.push("- index.ts         入口：CLI 解析 + agent 主循环（保持轻量）");
   b.push("- src/tools.ts     工具注册表（新增工具在此注册）");
   b.push("- src/budget.ts    上下文 token 预算与超限压缩（P2-3，最轻档 tool result clearing）");
+  b.push("- src/gate.ts      测试闸门（P3-2：收尾自动跑测试、失败自动回滚）");
+  b.push("- src/audit.ts     审计日志（P3-4：每次工具调用入参/出参摘要落盘）");
   b.push("- src/context.ts   系统提示词组装");
   b.push("- src/memory.ts    记忆读写（" + STATE_FILE + " / " + MEMORY_FILE + "）");
-  b.push("- src/git.ts       write_file 前的 git 快照");
+  b.push("- src/git.ts       git 安全快照（write_file + run_bash 写操作前）");
   b.push("- skills/          组合操作库（skills/<name>/SKILL.md + 自测）");
   b.push("- tests/           self-test 用例（改完必须跑）");
   b.push("");
@@ -149,10 +153,13 @@ export function buildSystemPrompt(ctx: ContextInput): string {
     b.push("");
   }
   b.push("[规则]");
-  b.push("1. 修改工作区文件前必须 git 快照（write_file 已自动处理）；改完必须跑 tests/ 验证。");
+  b.push("1. 修改工作区文件前必须 git 快照（write_file / run_bash 写操作已自动处理）；改完必须跑 tests/ 验证。");
   b.push("2. 工具输出默认完整读取，不要假设被截断；大文件用偏移续读。");
   b.push("3. 需要长任务时，给 run_script / run_bash 传更大的 timeoutMs（如 120000），别等超时。");
   b.push("4. 结论用简洁中文总结，说明做了什么、怎么验证的、结果如何。");
   b.push("5. 若工作区根目录存在 " + AGENTS_FILE + "，它是用户与我的项目级契约，约束力高于 [项目] 区块中 README/docs 的描述；内容冲突时以 " + AGENTS_FILE + " 为准。");
+  b.push("6. P3 安全：路径（cwd / path）默认限制在工作区内；run_bash 危险命令（rm -rf /、git push、fork bomb 等）会被权限系统直接拒绝 —— 被拒后改用安全写法或 write_file。");
+  b.push("7. P3 测试闸门：本会话发生过自修改（write_file / 写操作 run_bash）时，收尾会自动跑 bun test；失败会自动回滚到会话开始前 —— 不用手动 revert，被回滚后重新检查改动。");
+  b.push("8. P3 审计：每次工具调用都会记录入参/出参摘要到 " + "AUDIT.log.jsonl" + "（本地持久化，gitignore）。");
   return b.join("\n");
 }
