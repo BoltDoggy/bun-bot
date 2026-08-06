@@ -1,5 +1,5 @@
-// bun-bot — 自我认知为 Bun.js 运行时的 agent。M1（P0+P1）：认识自己、能改自己 —— 自修改最小闭环成立（P0: AGENT_STATE.json / MEMORY.md 记忆；P1: run_script + read/write/list/bash 工具集）。P2-2 任务模式：--self 先 plan 后执行、逐项勾选、进度写回状态可续跑。P2-3 上下文预算：budget.ts token 估算 + tool result clearing（超限时压缩早期工具结果）。
-// 用法: bun run index.ts [--stream] [--self] "你的任务"（--stream 走 SSE 流式；--self 开任务模式）
+// bun-bot — 自我认知为 Bun.js 运行时的 agent。M1（P0+P1）：认识自己、能改自己 —— 自修改最小闭环成立（P0: AGENT_STATE.json / MEMORY.md 记忆；P1: run_script + read/write/list/bash 工具集）。P2-2 任务模式：--self 先 plan 后执行、逐项勾选、进度写回状态可续跑。P2-3 上下文预算：budget.ts token 估算 + tool result clearing（超限时压缩早期工具结果）。P2-4 checkpoint：--resume 会话级断点续跑（消息历史落盘 AGENT_CHECKPOINT.json，中断后恢复上下文继续）。
+// 用法: bun run index.ts [--stream] [--self] [--resume] "你的任务"（--stream 走 SSE 流式；--self 开任务模式；--resume 从上次断点续跑，可不带任务）
 import { existsSync } from "node:fs";
 import {
   workspace,
@@ -8,6 +8,11 @@ import {
   syncMemoryFile,
   loadProjectContext,
   statePath,
+  checkpointPath,
+  saveCheckpoint,
+  loadCheckpoint,
+  clearCheckpoint,
+  buildResumeMessages,
 } from "./src/memory";
 import { buildSystemPrompt } from "./src/context";
 import { tools, executeTool } from "./src/tools";
@@ -34,9 +39,11 @@ const BUDGET_TOKENS = Number(process.env.BUN_BOT_CONTEXT_BUDGET || DEFAULT_BUDGE
 const args = process.argv.slice(2);
 const STREAM = args.includes("--stream");
 const SELF_MODE = args.includes("--self");
+// P2-4：--resume 从上次 checkpoint 恢复会话（可不带新任务；带了则作为追加指令）
+const RESUME = args.includes("--resume");
 const task = args.filter((a) => !a.startsWith("--")).join(" ");
-if (!task) {
-  console.error('用法: bun run index.ts [--stream] [--self] "你的任务"');
+if (!task && !RESUME) {
+  console.error('用法: bun run index.ts [--stream] [--self] [--resume] "你的任务"（--resume 从上次断点续跑，可不带任务）');
   process.exit(1);
 }
 
@@ -115,15 +122,33 @@ if (!existsSync(statePath())) {
 }
 
 const project = loadProjectContext();
+const systemPrompt = buildSystemPrompt({ state, project, selfMode: SELF_MODE });
 let messages: ChatMessage[] = [
-  { role: "system", content: buildSystemPrompt({ state, project, selfMode: SELF_MODE }) },
-  { role: "user", content: task },
+  { role: "system", content: systemPrompt },
+  { role: "user", content: task || "（--resume 恢复：请基于已有上下文继续执行上次未完成的任务。）" },
 ];
+
+// P2-4：--resume checkpoint —— 从上次断点恢复会话消息历史（system 用最新提示词重建）
+let resumedFromCheckpoint = false;
+if (RESUME) {
+  const ckpt = loadCheckpoint();
+  if (ckpt && ckpt.length) {
+    messages = [
+      { role: "system", content: systemPrompt },
+      ...buildResumeMessages(ckpt, task || undefined),
+    ];
+    resumedFromCheckpoint = true;
+    console.error("[bun-bot] --resume：已从断点恢复会话（" + ckpt.length + " 条历史消息" +
+      (task ? "，并追加新任务「" + task + "」" : "，无新任务直接续跑") + "）");
+  } else {
+    console.error("[bun-bot] --resume：未找到 checkpoint（" + checkpointPath() + "），按普通模式从新任务开始");
+  }
+}
 // P2-3：本轮会话触发的上下文压缩告警（结束时写回 state.contextWarnings）
 const sessionWarnings: string[] = [];
 
 console.error("[bun-bot] 工作区: " + workspace());
-console.error("[bun-bot] 模型: " + MODEL + " | 流式: " + STREAM + " | 任务模式: " + SELF_MODE + " | 上下文预算: " + BUDGET_TOKENS + " tokens");
+console.error("[bun-bot] 模型: " + MODEL + " | 流式: " + STREAM + " | 任务模式: " + SELF_MODE + " | 续跑: " + RESUME + " | 上下文预算: " + BUDGET_TOKENS + " tokens");
 // P2-2：任务模式下检测到上次未完成计划 → 提示续跑（[记忆] 区块已展示进度）
 if (SELF_MODE && state.activePlan && state.activePlan.status === "active") {
   console.error("[bun-bot] 任务模式：检测到未完成计划「" + state.activePlan.title + "」，从上次断点继续（见 [记忆] 当前任务计划）");
@@ -145,14 +170,16 @@ for (let i = 0; i < MAX_ITERATIONS; i++) {
   const message = await chatCompletion(messages, STREAM);
   messages.push(message);
   enforceBudget(i + 1);
+  // P2-4：assistant 回复后落盘 checkpoint（含 tool_calls 的轮次是恢复的关键节点）
+  saveCheckpoint(messages);
 
   if (!message.tool_calls?.length) {
-    // 没有工具调用，任务完成：写回记忆后退出
+    // 没有工具调用，任务完成：写回记忆、清除 checkpoint 后退出
     if (!STREAM) console.log(message.content ?? "");
     // 重新加载再写回：update_plan 可能已在会话中改过 activePlan，
     // 用旧 state 引用覆盖会把进度冲掉（防覆盖）
     const fresh = loadState();
-    fresh.lastTask = task;
+    fresh.lastTask = task || (resumedFromCheckpoint ? "（--resume 续跑完成）" : task);
     fresh.lastSummary = message.content ?? "";
     fresh.lastRunAt = new Date().toISOString();
     // P2-3：本轮压缩告警合并进 contextWarnings（保留最近 10 条）
@@ -161,6 +188,8 @@ for (let i = 0; i < MAX_ITERATIONS; i++) {
     }
     saveState(fresh);
     syncMemoryFile(fresh);
+    // P2-4：任务正常完成，清除断点（未完成的会话才保留 checkpoint）
+    clearCheckpoint();
     process.exit(0);
   }
 
@@ -176,10 +205,12 @@ for (let i = 0; i < MAX_ITERATIONS; i++) {
     messages.push({ role: "tool", tool_call_id: call.id, content: result });
     // 工具结果是主要增长点：入队后立即检查预算
     enforceBudget(i + 1);
+    // P2-4：工具结果入队后落盘 checkpoint（中断在此刻也能恢复）
+    saveCheckpoint(messages);
   }
 }
 
-console.error("达到最大迭代次数 (" + MAX_ITERATIONS + ")，强制结束。");
+console.error("达到最大迭代次数 (" + MAX_ITERATIONS + ") 或异常中断，checkpoint 已保存（" + checkpointPath() + "），可用 --resume 续跑。");
 process.exit(1);
 
 export {};
