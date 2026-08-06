@@ -1,5 +1,5 @@
-// bun-bot — 自我认知为 Bun.js 运行时的 agent。M1（P0+P1）：认识自己、能改自己 —— 自修改最小闭环成立（P0: AGENT_STATE.json / MEMORY.md 记忆；P1: run_script + read/write/list/bash 工具集）。P2-2 任务模式：--self 先 plan 后执行、逐项勾选、进度写回状态可续跑。P2-3 上下文预算：budget.ts token 估算 + tool result clearing（超限时压缩早期工具结果）。P2-4 checkpoint：--resume 会话级断点续跑（消息历史落盘 AGENT_CHECKPOINT.json，中断后恢复上下文继续）。P3 质量与防护：git 安全阀补 run_bash（写操作前自动快照）+ 测试闸门（收尾自动跑测试、失败自动回滚）+ 沙箱权限分级（路径限制工作区 / 危险命令黑名单）+ 审计日志（AUDIT.log.jsonl）。P4 通用化：可在其他项目使用（身份/关键文件动态生成 + .bunbot.json 配置 + 状态移入 .bunbot/ + 多生态测试闸门 + CLI bin/init + readonly + 全局配置 + 大项目文件树 + 交互模式）。编译产物自举：`bun build --compile` 后 `./bun-bot run <script>` 用内嵌运行时执行外部脚本（run_script spawn 自身，无 bun 环境也能跑）。
-// 用法: bun run index.ts [--stream] [--self] [--resume] [--interactive] "你的任务"（--stream 走 SSE 流式；--self 开任务模式；--resume 从上次断点续跑，可不带任务；--interactive 多轮 REPL）
+// bun-bot — 自我认知为 Bun.js 运行时的 agent。M1（P0+P1）：认识自己、能改自己 —— 自修改最小闭环成立（P0: AGENT_STATE.json / MEMORY.md 记忆；P1: run_script + read/write/list/bash 工具集）。P2-2 任务模式：--self 先 plan 后执行、逐项勾选、进度写回状态可续跑。P2-3 上下文预算：budget.ts token 估算 + tool result clearing（超限时压缩早期工具结果）。P2-4 checkpoint：--resume 会话级断点续跑（消息历史落盘 AGENT_CHECKPOINT.json，中断后恢复上下文继续）。P3 质量与防护：git 安全阀补 run_bash（写操作前自动快照）+ 测试闸门（收尾自动跑测试、失败自动回滚）+ 沙箱权限分级（路径限制工作区 / 危险命令黑名单）+ 审计日志（AUDIT.log.jsonl）。P4 通用化：可在其他项目使用（身份/关键文件动态生成 + .bunbot.json 配置 + 状态移入 .bunbot/ + 多生态测试闸门 + CLI bin/init + readonly + 全局配置 + 大项目文件树 + 交互模式）。P5 全平台分发：GitHub Actions 矩阵构建 + 安装脚本。P6-1 流式输出默认：SSE 流式默认开启，--no-stream 关闭（吸收 research 分支理念）。编译产物自举：`bun build --compile` 后 `./bun-bot run <script>` 用内嵌运行时执行外部脚本（run_script spawn 自身，无 bun 环境也能跑）。
+// 用法: bun run index.ts [--no-stream] [--self] [--resume] [--interactive] "你的任务"（默认 SSE 流式输出，--no-stream 关闭改一次性输出；--self 开任务模式；--resume 从上次断点续跑，可不带任务；--interactive 多轮 REPL）
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { createInterface } from "node:readline/promises";
@@ -81,7 +81,8 @@ const BUDGET_TOKENS = loadConfig(workspace()).budget;
 
 // ---------- 命令行解析 ----------
 const args = process.argv.slice(2);
-const STREAM = args.includes("--stream");
+// P6-1：流式输出默认开启（SSE 逐 token），--no-stream 关闭改一次性输出；保留 --stream 兼容（无操作）
+const STREAM = !args.includes("--no-stream");
 const SELF_MODE = args.includes("--self");
 // P2-4：--resume 从上次 checkpoint 恢复会话（可不带新任务；带了则作为追加指令）
 const RESUME = args.includes("--resume");
@@ -89,7 +90,7 @@ const RESUME = args.includes("--resume");
 const INTERACTIVE = args.includes("--interactive");
 const task = args.filter((a) => !a.startsWith("--")).join(" ");
 if (!task && !RESUME && !INTERACTIVE) {
-  console.error('用法: bun run index.ts [--stream] [--self] [--resume] [--interactive] "你的任务"（--resume 从上次断点续跑，可不带任务；--interactive 交互模式，可不带任务）');
+  console.error('用法: bun run index.ts [--no-stream] [--self] [--resume] [--interactive] "你的任务"（默认 SSE 流式输出，--no-stream 关闭；--resume 从上次断点续跑，可不带任务；--interactive 交互模式，可不带任务）');
   process.exit(1);
 }
 
