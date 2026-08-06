@@ -56,7 +56,7 @@
   - P4-⑦ 全局配置 `~/.bun-bot/config.json`：默认模型/权限/API key fallback（DEEPSEEK_API_KEY 未设置时用全局）；多项目状态天然按 `.bunbot/` 隔离 → `tests/p4-global.test.ts`（4 用例）
   - P4-⑧ 大项目上下文加载：buildFileTree 感知 .gitignore + 扩展忽略（vendor/target/__pycache__/.venv 等）+ 行数预算截断（超限提示 list_dir）→ `tests/p4-filetree.test.ts`（4 用例）
   - P4-⑨ 交互模式 `--interactive`：多轮 REPL 对话连续（src/interactive.ts，runRound 可注入离线测试）+ index.ts 主循环提取 runAgentLoop → `tests/p4-interactive.test.ts`（4 用例）
-  - 自测: `bun test` **73 用例 / 438 expect 全绿**；`bun build index.ts` 编译通过
+  - 自测: `bun test` **76 用例 / 447 expect 全绿**；`bun build index.ts` 编译通过
 
 ## 与主 README 的关系
 

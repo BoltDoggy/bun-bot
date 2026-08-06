@@ -88,7 +88,7 @@ bun-bot "分析这个项目的结构并给出建议"
 │   ├── git.ts          # git 安全快照（write_file + run_bash 写操作前）
 │   └── audit.ts        # 审计日志（落盘 .bunbot/AUDIT.log.jsonl）
 ├── skills/             # 组合操作库（SKILL.md + 实现 + 自测）
-├── tests/              # 73 用例 / 438 expect（M1 + skills + AGENTS.md + P2 + P3 + P4 全量闸门）
+├── tests/              # 76 用例 / 447 expect（M1 + skills + AGENTS.md + P2 + P3 + P4 全量闸门）
 ├── .bunbot/            # 状态目录（P4-4：AGENT_STATE / MEMORY / CHECKPOINT / AUDIT，gitignore，本地持久化）
 ├── blog.md             # agent 真实运行实录（自我进化过程）
 └── docs/               # 迭代进度与架构文档
@@ -116,7 +116,7 @@ bun-bot "分析这个项目的结构并给出建议"
 ## 自测
 
 ```bash
-bun test   # 73 用例 / 438 expect：工具层 + 记忆层 + checkpoint + skills + AGENTS.md + P2（ACI/任务模式/预算/resume）+ P3（安全/闸门/审计）+ P4（通用化 9 项），零外部依赖
+bun test   # 76 用例 / 447 expect：工具层 + 记忆层 + checkpoint + skills + AGENTS.md + P2（ACI/任务模式/预算/resume）+ P3（安全/闸门/审计）+ P4（通用化 9 项），零外部依赖
 bun run skills/web-search/self-test.ts --online   # web-search skill 在线实测（可选）
 ```
 

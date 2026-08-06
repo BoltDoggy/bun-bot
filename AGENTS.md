@@ -5,7 +5,7 @@
 > 改动本文件涉及行为变更时，同步更新 README / docs / tests 并跑 `bun test`。
 > 2026-08 修订：P2-2 任务模式（--self）+ P2-3 上下文预算 + P2-4 checkpoint（--resume）+ P3 质量与防护（git 安全阀补 run_bash / 测试闸门自动回滚 / 沙箱权限分级 / 审计日志）落地后，同步入口 / 可调变量 / 测试数字。
 > 2026-08 再修订：**P4 通用化落地** —— bun-bot 可在任意项目使用：身份/关键文件去专用化（context.ts）、.bunbot.json 项目配置 + ~/.bun-bot/ 全局配置（config.ts）、状态文件移入 .bunbot/（不污染 git）、多生态测试闸门（gate.ts）、CLI bin + init（bin/bun-bot.ts）、readonly/ask 白名单、大项目文件树忽略/截断、交互模式（--interactive）。本文件已同步入口 / 可调变量 / 测试数字。
-> 2026-08 三修订：**旧设计兼容清理** —— memory.ts 移除旧位置（项目根）状态文件兼容读取（loadState / loadCheckpoint 不再 fallback 工作区根）、根目录旧状态文件与 .gitignore 旧条目已删、docs/PLAN.md（P0-P4 全部完成的历史计划）归档删除。本文件已同步测试数字（73 用例 / 438 expect）与 docs 描述。
+> 2026-08 三修订：**旧设计兼容清理** —— memory.ts 移除旧位置（项目根）状态文件兼容读取（loadState / loadCheckpoint 不再 fallback 工作区根）、根目录旧状态文件与 .gitignore 旧条目已删、docs/PLAN.md（P0-P4 全部完成的历史计划）归档删除。本文件已同步测试数字（76 用例 / 447 expect）与 docs 描述。
 
 ## 运行与构建
 
@@ -26,7 +26,7 @@
 
 ## 测试闸门（改完必须跑）
 
-- `bun test`：73 用例 / 438 expect，零外部依赖 —— 任何代码改动后必须全绿（P4 新增 9 个测试文件：p4-context / p4-config / p4-state-dir / p4-gate / p4-cli / p4-readonly / p4-global / p4-filetree / p4-interactive）
+- `bun test`：76 用例 / 447 expect，零外部依赖 —— 任何代码改动后必须全绿（P4 新增 9 个测试文件：p4-context / p4-config / p4-state-dir / p4-gate / p4-cli / p4-readonly / p4-global / p4-filetree / p4-interactive）
 - `bun run skills/web-search/self-test.ts --online`：web-search skill 在线实测（改了解析逻辑必须跑）
 - 新增能力必须补测试用例：`tests/` 是自我进化的验证闸门
 
