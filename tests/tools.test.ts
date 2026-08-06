@@ -1,11 +1,12 @@
 /**
- * tools.test.ts — M1 自测闸门（+ skills 层 + AGENTS.md 项目指令 + P2-1 ACI 化 + P2-2 任务模式 + P2-3 上下文预算）
+ * tools.test.ts — M1 自测闸门（+ skills 层 + AGENTS.md 项目指令 + P2-1 ACI 化 + P2-2 任务模式 + P2-3 上下文预算 + P2-4 checkpoint）
  *
  * 覆盖：run_script（沙箱 cwd / 工作区 cwd）、read_file（偏移续读）、write_file（diff）、
  *       list_dir（-a）、run_bash、输出截断、工具描述 example usage（P2-1）、
  *       记忆读写、skills 索引、web-search 解析器、AGENTS.md 项目级指令加载与优先级、
  *       update_plan 任务计划（P2-2：创建/勾选/完成度/记忆往返/任务模式提示词）、
- *       budget.ts 上下文预算（P2-3：token 估算 / tool result clearing 压缩 / 告警展示）。
+ *       budget.ts 上下文预算（P2-3：token 估算 / tool result clearing 压缩 / 告警展示）、
+ *       checkpoint 断点续跑（P2-4：save/load/clear 往返 + buildResumeMessages 恢复组装）。
  *
  * 运行：bun test  或  bun run tests/tools.test.ts
  */
@@ -27,12 +28,17 @@ import {
   workspace,
   statePath,
   memoryPath,
+  checkpointPath,
+  saveCheckpoint,
+  loadCheckpoint,
+  clearCheckpoint,
+  buildResumeMessages,
   loadProjectContext,
   readAgentDirective,
   AGENTS_FILE,
 } from "../src/memory";
 import { skillsIndex, buildSystemPrompt } from "../src/context";
-import { estimateTokens, estimateMessagesTokens, compressContext } from "../src/budget";
+import { estimateTokens, estimateMessagesTokens, compressContext, type ChatMessage } from "../src/budget";
 import { parseBingHtml, parseDdgHtml } from "../skills/web-search/search";
 
 let tmp: string;
@@ -503,4 +509,64 @@ test("buildSystemPrompt [记忆] 区块展示上下文预算告警 + MEMORY.md �
   clean.contextWarnings = [];
   saveState(clean);
   syncMemoryFile(clean);
+});
+
+// ---------- checkpoint 断点续跑（P2-4：--resume） ----------
+
+test("saveCheckpoint 落盘消息历史（过滤 system），loadCheckpoint 往返，clearCheckpoint 清除", () => {
+  const msgs: ChatMessage[] = [
+    { role: "system", content: "系统提示词（不应被持久化）" },
+    { role: "user", content: "任务：加一个工具" },
+    {
+      role: "assistant",
+      content: null,
+      tool_calls: [{ id: "call_1", type: "function", function: { name: "list_dir", arguments: "{}" } }],
+    },
+    { role: "tool", tool_call_id: "call_1", content: "文件树…" },
+  ];
+  saveCheckpoint(msgs);
+  expect(existsSync(checkpointPath())).toBe(true);
+  const loaded = loadCheckpoint();
+  expect(loaded).not.toBeNull();
+  // system 被过滤，其余保留且顺序、tool_call_id 关联不变
+  expect(loaded!.length).toBe(3);
+  expect(loaded!.every((m) => m.role !== "system")).toBe(true);
+  expect(loaded![0].role).toBe("user");
+  expect(loaded![0].content).toBe("任务：加一个工具");
+  expect(loaded![2].role).toBe("tool");
+  expect(loaded![2].tool_call_id).toBe("call_1");
+  expect(loaded![2].content).toBe("文件树…");
+
+  // 清除后文件消失、load 返回 null
+  clearCheckpoint();
+  expect(existsSync(checkpointPath())).toBe(false);
+  expect(loadCheckpoint()).toBeNull();
+});
+
+test("buildResumeMessages：末尾 tool 补 user 兜底 + 可选新任务追加", () => {
+  const ckpt: ChatMessage[] = [
+    { role: "user", content: "原任务" },
+    {
+      role: "assistant",
+      content: null,
+      tool_calls: [{ id: "c1", type: "function", function: { name: "run_script", arguments: "{}" } }],
+    },
+    { role: "tool", tool_call_id: "c1", content: "结果" },
+  ];
+  // 无新任务：末尾 tool → 补一条 user 兜底（保证 API 合法），不加其他
+  const r1 = buildResumeMessages(ckpt);
+  expect(r1.length).toBe(4);
+  expect(r1[3].role).toBe("user");
+  expect(r1[3].content).toContain("checkpoint 恢复");
+  // 有新任务：追加在最后
+  const r2 = buildResumeMessages(ckpt, "继续");
+  expect(r2.length).toBe(5);
+  expect(r2[4].role).toBe("user");
+  expect(r2[4].content).toBe("继续");
+  // 末尾不是 tool（正常结尾）：不补兜底消息
+  const r3 = buildResumeMessages([{ role: "user", content: "原任务" }]);
+  expect(r3.length).toBe(1);
+  // 新任务为空白：不追加
+  const r4 = buildResumeMessages([{ role: "user", content: "原任务" }], "   ");
+  expect(r4.length).toBe(1);
 });
