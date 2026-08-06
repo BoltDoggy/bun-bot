@@ -32,39 +32,33 @@ powershell -ExecutionPolicy Bypass -c "irm https://raw.githubusercontent.com/Bol
 > 安装脚本可定制：`BUN_BOT_REPO`（fork/私有源）、`BUN_BOT_VERSION`（默认 latest，指定如 0.1.0）、
 > `--dir` 安装目录等，详见 `scripts/install.sh --help` 与 `scripts/install.ps1 -?`。
 
-**方式 B：从源码运行**
+**方式 B：在任意项目使用（P4）**
+
+装好 `bun-bot` 命令后（方式 A），在目标项目目录直接使用：
 
 ```bash
-bun install
-cp .env.example .env   # 填入 DEEPSEEK_API_KEY
-bun run index.ts "计算斐波那契数列第 30 项"
-```
-
-**方式 C：在任意项目使用（P4）**
-
-```bash
-# 1. 全局安装 CLI（或 bunx bun-bot）
-bun link
-# 2. 在目标项目初始化（生成 AGENTS.md 模板 + .bunbot.json + .gitignore 条目）
+# 1.（可选）初始化项目：生成 AGENTS.md 模板 + .bunbot.json + .gitignore 条目
 bun-bot init
-# 3. 直接跑任务（身份/关键文件/测试闸门按项目自适应；状态文件进 .bunbot/ 不污染 git）
+# 2. 直接跑任务（身份/关键文件/测试闸门按项目自适应；状态文件进 .bunbot/ 不污染 git）
 bun-bot "分析这个项目的结构并给出建议"
 ```
 
 > 可选：在项目根目录放一个 `AGENTS.md` 写入项目约定（如禁止改哪些文件、必须跑什么测试），
 > bun-bot 启动时会自动加载并优先遵守它。
 
-### 命令行用法
+> 想从源码运行 / 参与开发？见下方「开发者视角 → 本地开发（从源码运行）」。
+
+### 命令行用法（`bun-bot` 为安装后的全局命令）
 
 | 参数 | 说明 | 示例 |
 | --- | --- | --- |
-| （无） | 默认非流式执行 | `bun run index.ts "计算斐波那契数列第 30 项"` |
-| `--stream` | SSE 流式输出 | `bun run index.ts --stream "..."` |
-| `--self` | 任务模式：先 plan 后执行、逐项勾选、中断可续跑 | `bun run index.ts --self "给我加一个 read_file 工具并补文档"` |
-| `--resume` | 从上次断点续跑（可不带任务；带任务作为追加指令） | `bun run index.ts --resume` |
-| `--interactive` | 交互模式：多轮 REPL，对话跨轮保持 | `bun run index.ts --interactive` |
+| （无） | 默认非流式执行 | `bun-bot "计算斐波那契数列第 30 项"` |
+| `--stream` | SSE 流式输出 | `bun-bot --stream "..."` |
+| `--self` | 任务模式：先 plan 后执行、逐项勾选、中断可续跑 | `bun-bot --self "给我加一个 read_file 工具并补文档"` |
+| `--resume` | 从上次断点续跑（可不带任务；带任务作为追加指令） | `bun-bot --resume` |
+| `--interactive` | 交互模式：多轮 REPL，对话跨轮保持 | `bun-bot --interactive` |
 
-全局 CLI（`bun link` 后）：`bun-bot init` / `bun-bot --version` / `bun-bot --help` / `bun-bot "任务"`。
+其他命令：`bun-bot init`（初始化项目）/ `bun-bot --version` / `bun-bot --help`。
 
 ### 能干什么（特性）
 
@@ -157,6 +151,19 @@ bun-bot "分析这个项目的结构并给出建议"
 ├── blog.md             # agent 真实运行实录（自我进化过程）
 └── docs/               # 迭代进度与架构文档（面向自我迭代）
 ```
+
+### 本地开发（从源码运行）
+
+想改 bun-bot 本身 / 贡献代码时，从源码跑：
+
+```bash
+git clone https://github.com/BoltDoggy/bun-bot.git && cd bun-bot
+bun install
+cp .env.example .env   # 填入 DEEPSEEK_API_KEY
+bun run index.ts "计算斐波那契数列第 30 项"
+```
+
+> 源码入口 `bun run index.ts` 与安装后的全局命令 `bun-bot` 等价（编译产物就是 index.ts 的 `bun build --compile` 产物，同样支持 init / --version / --help）；`bun link` 后也可直接用 `bun-bot`。
 
 ### 构建与发布（P5）
 
