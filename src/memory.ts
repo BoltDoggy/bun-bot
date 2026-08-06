@@ -1,5 +1,5 @@
 /**
- * memory.ts — 记忆读写（P0 + P2-2 任务模式 + P2-3 预算告警 + P2-4 checkpoint + P4 通用化）
+ * memory.ts — 记忆读写（P0 + P2-2 任务模式 + P2-3 预算告警 + P2-4 checkpoint + P4 通用化 + P6-2 指令拆分）
  *
  * 数据（P4-4：默认移入 .bunbot/ 目录，不污染目标仓库 git status）：
  *   .bunbot/AGENT_STATE.json        机器可读状态（决策 / 踩坑 / TODO / 上次任务 / 当前任务计划 / 上下文预算告警）
@@ -20,6 +20,9 @@
  * P4-9 大项目上下文加载：buildFileTree 感知 .gitignore（+ 扩展忽略 vendor/target/
  *               __pycache__/.venv 等）+ 行数预算化截断（超限提示按需 list_dir）——
  *               大 monorepo / 大依赖目录不会撑爆系统提示词。
+ * P6-2 项目级指令拆分（吸收 research 分支理念）：AGENTS.md 精简为通用项目契约，
+ *               bun-bot 自研细节（运行/构建、可调变量、测试闸门、架构决策、踩坑）拆入
+ *               BUN_BOT.md —— 两者由 readAgentDirective 一并加载（[项目] 区块，优先级最高）。
  *
  * 注意：状态文件都在 .gitignore 中（每次会话写回会产生噪音），仅本地持久化，不纳入版本控制。
  *
@@ -27,6 +30,7 @@
  *   AGENTS.md         可选。项目根目录的 agent 指令文件（多 agent 工具链通用命名，
  *                     类似 CLAUDE.md 的通用约定），存在时由 loadProjectContext 加载，
  *                     优先级高于 README / docs。
+ *   BUN_BOT.md        可选（P6-2）。bun-bot 自研实现细节，与 AGENTS.md 同级加载。
  *
  * 工作区：默认 process.cwd()，可用环境变量 BUN_BOT_WORKSPACE 覆盖（便于测试沙箱）。
  */
@@ -49,6 +53,8 @@ export const MEMORY_FILE = "MEMORY.md";
 export const CHECKPOINT_FILE = "AGENT_CHECKPOINT.json";
 /** 项目级指令文件（多 agent 工具链通用约定，唯一命名） */
 export const AGENTS_FILE = "AGENTS.md";
+/** bun-bot 实现细节文件（P6-2：与 AGENTS.md 同级加载） */
+export const BUN_BOT_FILE = "BUN_BOT.md";
 
 /** 当前工作区根目录（agent 可以读写的地方） */
 export function workspace(): string {
@@ -396,28 +402,33 @@ export function buildFileTree(
 }
 
 export interface AgentDirective {
-  /** 实际文件名：AGENTS.md */
+  /** 实际文件名：AGENTS.md / BUN_BOT.md */
   name: string;
   content: string;
 }
 
 /**
- * 读取项目级指令 AGENTS.md。
- * 存在时返回 { name, content }，不存在返回 null。
- * 指令优先级高于 README / docs：它是用户与 agent 之间的项目级契约。
+ * 读取项目级指令文件（P6-2：AGENTS.md + BUN_BOT.md，按顺序）。
+ * AGENTS.md 是通用项目契约（多 agent 工具链通用命名），BUN_BOT.md 是 bun-bot 自研实现细节；
+ * 两者同级加载进 [项目] 区块，优先级均高于 README / docs。
+ * 文件不存在时跳过；单个文件超 8000 字符截断（细节按需 read_file）。
  */
-export function readAgentDirective(): AgentDirective | null {
-  try {
-    const p = join(workspace(), AGENTS_FILE);
-    if (!existsSync(p)) return null;
-    let content = readFileSync(p, "utf8");
-    if (content.length > 8000) {
-      content = content.slice(0, 8000) + "\n… [" + AGENTS_FILE + " 过长，仅展示前 8000 字符，需完整内容请 read_file]";
+export function readAgentDirective(): AgentDirective[] {
+  const out: AgentDirective[] = [];
+  for (const f of [AGENTS_FILE, BUN_BOT_FILE]) {
+    try {
+      const p = join(workspace(), f);
+      if (!existsSync(p)) continue;
+      let content = readFileSync(p, "utf8");
+      if (content.length > 8000) {
+        content = content.slice(0, 8000) + "\n… [" + f + " 过长，仅展示前 8000 字符，需完整内容请 read_file]";
+      }
+      out.push({ name: f, content });
+    } catch {
+      // 单个文件读取失败不致命：其余指令照常加载
     }
-    return { name: AGENTS_FILE, content };
-  } catch {
-    return null;
   }
+  return out;
 }
 
 /** 读取 README + docs 索引 + 文件树，组装项目认知（按需截断） */
@@ -432,9 +443,10 @@ export function loadProjectContext(): string {
       return null;
     }
   };
-  // 项目级指令放在最前，优先级最高
-  const agent = readAgentDirective();
-  if (agent) parts.push("## " + agent.name + "（项目级指令，优先级最高）\n" + agent.content);
+  // 项目级指令放在最前，优先级最高（AGENTS.md + BUN_BOT.md）
+  for (const d of readAgentDirective()) {
+    parts.push("## " + d.name + "（项目级指令，优先级最高）\n" + d.content);
+  }
   const readme = readIf(join(workspace(), "README.md"), 8000);
   if (readme) parts.push("## README.md\n" + readme);
   const docsIdx = readIf(join(workspace(), "docs", "README.md"), 2000);
