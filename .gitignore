@@ -29,3 +29,5 @@ AGENT_STATE.json
 MEMORY.md
 # 会话级 checkpoint（--resume 断点续跑的消息历史，任务完成即清除）
 AGENT_CHECKPOINT.json
+# P3-4 审计日志（每次工具调用入参/出参摘要，持续追加，仅本地持久化）
+AUDIT.log.jsonl
