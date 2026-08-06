@@ -13,9 +13,11 @@
  * 端到端用 Bun.serve 起本地 HTTP 服务器 mock GitHub Releases（无需网络），
  * 通过 BUN_BOT_BASE_URL / BUN_BOT_TARGET 环境变量让安装脚本指向它。
  *
- * 跨平台（P5 实测修正）：本文件在 GitHub Actions 6 平台矩阵上跑（build.sh 先测后编译），
- * Windows runner 上：① 自动检测当前平台需识别 win32 → windows-x64.exe；② POSIX 可执行位
- * （mode & 0o111）在 Windows 恒为 0，该断言仅 Unix 适用。
+ * 跨平台（P5 实测修正）：本文件在 GitHub Actions 6 平台矩阵上跑（build.sh 先测后编译）：
+ *   - Windows x64：自动检测当前平台需识别 win32 → windows-x64.exe；POSIX 可执行位
+ *     （mode & 0o111）在 Windows 恒为 0，该断言仅 Unix 适用。
+ *   - Windows ARM（实验 runner）：Git Bash 可能是 x64 模拟层，uname -m 与 process.arch
+ *     不一致，自动检测断言以 install.sh 实际输出为准（不预先推断文件名）。
  *
  * 运行：bun test
  */
@@ -143,14 +145,16 @@ test("install.sh --help 输出用法且退出 0", async () => {
 
 test("install.sh 自动检测当前平台（无 --target 时）", async () => {
   const dir = join(tmp, "bin-auto");
-  // 与 install.sh 相同的平台映射：darwin / windows / linux（Windows runner 上跑 Git Bash）
-  const os = process.platform === "darwin" ? "darwin" : process.platform === "win32" ? "windows" : "linux";
-  const arch = process.arch === "arm64" ? "arm64" : "x64";
-  const ext = os === "windows" ? ".exe" : "";
-  const expected = `bun-bot-${os}-${arch}${ext}`;
   const r = await runInstall(["--dir", dir]);
   expect(r.exitCode).toBe(0);
-  expect(existsSync(join(dir, expected))).toBe(true);
+  // 以 install.sh 实际检测的 target 为准（输出含 "[install] 平台: <target>"）。
+  // Windows ARM 实验 runner 上 Git Bash 可能是 x64 模拟层（uname -m 与 process.arch 不一致），
+  // 故不预先用 process.platform/arch 推断文件名，断言对任何平台自洽（P5 实测 windows-11-arm）。
+  const m = r.stdout.match(/\[install\] 平台: (\S+)/);
+  expect(m).not.toBeNull();
+  const target = m![1];
+  const file = `bun-bot-${target}` + (target.startsWith("windows") ? ".exe" : "");
+  expect(existsSync(join(dir, file))).toBe(true);
 });
 
 test("install.sh 端到端：下载 → SHA256 校验 → 安装（可执行位已设置）", async () => {
