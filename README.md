@@ -169,15 +169,23 @@ bun run index.ts "计算斐波那契数列第 30 项"
 ### 构建与发布（P5）
 
 ```bash
-# 打 tag 自动构建 6 平台并发布 GitHub Release（.github/workflows/build.yml）；也可 Actions 页面手动触发
-git tag v0.1.0 && git push origin v0.1.0
-
-# 本地构建当前平台（脚本与 CI 共用）：产物 dist/bun-bot-<target>[.exe] + .sha256
+# ① 本地验证（可选但推荐：先测试再编译，顺手确认产物 --version）
 bash scripts/build.sh
+
+# ② 确保工作区干净（npm version 会检查 tracked 文件无未提交改动）
+git status --short
+
+# ③ 一步完成：改 package.json 版本号 + git commit + 打 tag v0.4.1
+npm version 0.4.1
+
+# ④ 推送（npm version 打的 tag 是本地 tag，要显式 git push；push 后 CI 自动构建发布）
+git push origin dev
+git push origin v0.4.1
 ```
 
-- 构建逻辑收敛在 `scripts/build.sh`（本地与 CI 共用：bun install → bun test 先绿 → bun build --compile → 生成 `.sha256`）
-- `.github/workflows/build.yml` 原生矩阵 6 平台（linux/darwin/windows × x64/arm64），tag `v*` 自动发布 GitHub Release（独立 release job 等全部平台构建完合并统一发布，避免并发竞态）、手动触发只出 artifact
+- `npm version <版本>` 一步完成「改版本号 + git commit + 打 tag」三件事（原子产生，天然避免 tag 与版本号不同步的坑）；只更新版本不打 tag 用 `npm version <版本> --no-git-tag-version`
+- 推 tag 后 `.github/workflows/build.yml` 自动构建 6 平台并发布 GitHub Release（独立 release job 等全部平台构建完合并统一发布，避免并发竞态）；也可 Actions 页面手动触发（只出 artifact）
+- 构建逻辑收敛在 `scripts/build.sh`（本地与 CI 共用：bun install → bun test 先绿 → bun build --compile → 生成 `.sha256`），产物 `dist/bun-bot-<target>[.exe]` + `.sha256`
 - 用户安装脚本 `scripts/install.sh`（POSIX sh）/ `install.ps1`（PowerShell）：检测平台 → 下载 → **SHA256 校验（失败中止）** → 安装为 `bun-bot` / `bun-bot.exe`（命令统一不带平台后缀）→ PATH
 
 ### 开发约定与测试闸门
