@@ -1,12 +1,15 @@
 {
   "name": "bun-bot",
   "version": "0.1.0",
-  "description": "使用 Bun 调用 DeepSeek API 的示例",
+  "description": "使用 Bun 调用 DeepSeek API 的编码代理（可全局安装：bun link）",
   "type": "module",
   "scripts": {
     "start": "bun run index.ts"
   },
   "devDependencies": {
     "bun-types": "^1.3.14"
+  },
+  "bin": {
+    "bun-bot": "./index.ts"
   }
 }

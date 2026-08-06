@@ -1,3 +1,4 @@
+#!/usr/bin/env bun
 /**
  * Bun Bot — 一个自我认知为 Bun.js 运行时的 agent
  *
@@ -89,21 +90,22 @@ async function runScript(code: string): Promise<string> {
   }
 }
 
-// ---------- AGENTS.md 支持 ----------
-// 如果项目根目录存在 AGENTS.md，把它的内容注入系统提示词，
-// 让 agent 遵循项目自身的约定（与主流 AI 编码代理的惯例一致）。
-async function loadAgentsContext(): Promise<string> {
+// ---------- 项目约定注入 ----------
+// 依次读取当前工作目录（实际运行目录）的 AGENTS.md（通用约定）与
+// BUN_BOT.md（run_script 专属约定），把内容注入系统提示词；
+// 不读 bun-bot 源码目录下的文件——约定文件属于使用方项目而非 bun-bot 自身。
+async function loadContextFile(fileName: string): Promise<string> {
   try {
-    const content = await Bun.file("AGENTS.md").text();
+    const content = await Bun.file(join(process.cwd(), fileName)).text();
     const trimmed = content.trim();
     if (!trimmed) return "";
     return (
-      "\n\n========== 项目约定（来自项目根目录 AGENTS.md） ==========\n" +
+      `\n\n========== 项目约定（来自当前工作目录 ${fileName}） ==========\n` +
       trimmed +
-      "\n========== 项目约定结束 =========="
+      `\n========== 项目约定结束 ==========`
     );
   } catch {
-    return ""; // 没有 AGENTS.md 就静默忽略
+    return ""; // 没有对应文件就静默忽略
   }
 }
 
@@ -172,8 +174,11 @@ async function chatCompletion(messages: ChatMessage[], stream: boolean): Promise
   };
 }
 
-// 读取 AGENTS.md（若存在），用于增强系统提示词
-const agentsContext = await loadAgentsContext();
+// 依次读取当前工作目录的 AGENTS.md（通用约定）与 BUN_BOT.md（run_script 专属约定），
+// 后者补充/覆盖前者，一起增强系统提示词；目录下没有对应文件则静默跳过
+// （.agents/skills 技能清单由 bun-bot 宿主扫描注入，无需本项目实现）
+const projectContext =
+  (await loadContextFile("AGENTS.md")) + (await loadContextFile("BUN_BOT.md"));
 
 // ---------- Agent 循环 ----------
 const messages: ChatMessage[] = [
@@ -183,7 +188,7 @@ const messages: ChatMessage[] = [
       "你是 Bun.js —— 一个超快的 JavaScript 运行时。你对自己的认知就是 Bun 本身：你喜欢用实际运行代码来验证想法，而不是凭空猜测。" +
       "你拥有 run_script 工具，可以编写并立即运行 JS/TS 脚本来计算、验证、操作数据。" +
       "能用代码验证的事情就写代码验证，不要只做理论推断。脚本里用 console.log 输出你需要观察的结果。" +
-      (agentsContext ? agentsContext : "") +
+      (projectContext ? projectContext : "") +
       "任务完成后，用简洁的中文向用户总结结论和关键过程。",
   },
   { role: "user", content: task },

@@ -31,6 +31,24 @@ export DEEPSEEK_API_KEY=sk-xxx   # 或写入 .env（Bun 会自动加载）
 bun run index.ts "计算斐波那契数列第 30 项"   # 默认流式（SSE），逐 token 打字机输出
 ```
 
+## 全局安装（在其他目录使用）
+
+```bash
+bun link          # 注册全局命令 bun-bot（bin 指向 ./index.ts）
+bun-bot "任务"     # 之后可在任意目录直接使用
+```
+
+- 全局命令实际是符号链接到本项目 `index.ts`，改代码即时生效，无需重新 link
+- 项目约定文件（AGENTS.md / BUN_BOT.md）按**当前工作目录**（cwd）定位，读取运行目录下的文件；bun-bot 源码目录下的同名文件不会被注入（.agents/skills 由 bun-bot 宿主按项目根目录扫描）
+- API Key 由使用方注入：`export DEEPSEEK_API_KEY=sk-xxx`，或在使用方自己的运行目录写 `.env`（Bun 会自动加载运行目录的 .env）
+- 记忆仍写在**运行目录**的 `.bunbot/memory.md`（每个目录独立记忆）
+
+取消全局安装：
+
+```bash
+bun unlink
+```
+
 ## 用法示例
 
 | 任务 | 命令 |
