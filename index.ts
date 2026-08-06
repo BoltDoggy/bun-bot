@@ -7,7 +7,8 @@
  *
  * 用法:
  *   export DEEPSEEK_API_KEY=sk-xxx   # 或写入 .env（Bun 会自动加载）
- *   bun run index.ts "计算斐波那契数列第 30 项"
+ *   bun run index.ts "计算斐波那契数列第 30 项"          # 普通模式
+ *   bun run index.ts --stream "同上"                    # 流式模式（SSE）
  */
 
 import { tmpdir } from "node:os";
@@ -23,20 +24,21 @@ const BASE_URL = "https://api.deepseek.com";
 const MODEL = "deepseek-v4-flash"; // 也可换成 deepseek-v4-pro
 const MAX_ITERATIONS = 15; // 防止 agent 无限循环
 
-const task = process.argv.slice(2).join(" ");
+// ---------- 命令行解析 ----------
+const args = process.argv.slice(2);
+const STREAM = args.includes("--stream"); // 流式输出最终回复
+const task = args.filter((a) => a !== "--stream").join(" ");
 if (!task) {
-  console.error('用法: bun run index.ts "你的任务"');
+  console.error('用法: bun run index.ts [--stream] "你的任务"');
   process.exit(1);
 }
 
 // ---------- 类型 ----------
-
 interface ToolCall {
   id: string;
   type: "function";
   function: { name: string; arguments: string };
 }
-
 interface ChatMessage {
   role: "system" | "user" | "assistant" | "tool";
   content: string | null;
@@ -44,8 +46,7 @@ interface ChatMessage {
   tool_call_id?: string;
 }
 
-// ---------- 工具实现 ----------
-
+// ---------- 工具定义 ----------
 const tools = [
   {
     type: "function",
@@ -88,8 +89,72 @@ async function runScript(code: string): Promise<string> {
   }
 }
 
-// ---------- Agent 循环 ----------
+// ---------- 对话（支持流式 / 非流式） ----------
+async function chatCompletion(messages: ChatMessage[], stream: boolean): Promise<ChatMessage> {
+  const res = await fetch(`${BASE_URL}/chat/completions`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${API_KEY}`,
+    },
+    body: JSON.stringify({ model: MODEL, messages, tools, stream }),
+  });
+  if (!res.ok) {
+    throw new Error(`HTTP ${res.status}: ${await res.text()}`);
+  }
 
+  // 非流式：一次性拿完整回复
+  if (!stream) {
+    const data = (await res.json()) as { choices: { message: ChatMessage }[] };
+    return data.choices[0].message;
+  }
+
+  // 流式：逐 token 输出 content，同时按 index 聚合 tool_calls 增量
+  const reader = res.body!.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let content = "";
+  const toolCalls: ToolCall[] = [];
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n");
+    buffer = lines.pop() ?? ""; // 最后一行可能不完整
+    for (const raw of lines) {
+      const line = raw.trim();
+      if (!line.startsWith("data:")) continue;
+      const data = line.slice(5).trim();
+      if (!data || data === "[DONE]") continue;
+      const chunk = JSON.parse(data);
+      const delta = chunk.choices?.[0]?.delta ?? {};
+      if (delta.content) {
+        content += delta.content;
+        process.stdout.write(delta.content); // 打字机效果
+      }
+      for (const tc of delta.tool_calls ?? []) {
+        const slot = (toolCalls[tc.index] ??= {
+          id: "",
+          type: "function",
+          function: { name: "", arguments: "" },
+        });
+        if (tc.id) slot.id = tc.id;
+        if (tc.function?.name) slot.function.name = tc.function.name;
+        if (tc.function?.arguments) slot.function.arguments += tc.function.arguments;
+      }
+    }
+  }
+  if (content) process.stdout.write("\n");
+  const calls = toolCalls.filter((t) => t.function.name);
+  return {
+    role: "assistant",
+    content: content || null,
+    tool_calls: calls.length ? calls : undefined,
+  };
+}
+
+// ---------- Agent 循环 ----------
 const messages: ChatMessage[] = [
   {
     role: "system",
@@ -102,29 +167,13 @@ const messages: ChatMessage[] = [
   { role: "user", content: task },
 ];
 
-async function chatCompletion(): Promise<ChatMessage> {
-  const res = await fetch(`${BASE_URL}/chat/completions`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${API_KEY}`,
-    },
-    body: JSON.stringify({ model: MODEL, messages, tools, stream: false }),
-  });
-  if (!res.ok) {
-    throw new Error(`HTTP ${res.status}: ${await res.text()}`);
-  }
-  const data = (await res.json()) as { choices: { message: ChatMessage }[] };
-  return data.choices[0].message;
-}
-
 for (let i = 0; i < MAX_ITERATIONS; i++) {
-  const message = await chatCompletion();
+  const message = await chatCompletion(messages, STREAM);
   messages.push(message);
 
   if (!message.tool_calls?.length) {
     // 没有工具调用，说明 agent 认为任务完成
-    console.log(message.content ?? "");
+    if (!STREAM) console.log(message.content ?? "");
     process.exit(0);
   }
 
