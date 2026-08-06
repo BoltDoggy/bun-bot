@@ -1,9 +1,9 @@
 /**
- * tools.test.ts — M1 自测闸门（+ skills 层 + AGENTS.md 项目指令）
+ * tools.test.ts — M1 自测闸门（+ skills 层 + AGENTS.md 项目指令 + P2-1 ACI 化）
  *
  * 覆盖：run_script（沙箱 cwd / 工作区 cwd）、read_file（偏移续读）、write_file（diff）、
- *       list_dir（-a）、run_bash、输出截断、记忆读写、skills 索引、web-search 解析器、
- *       AGENTS.md 项目级指令加载与优先级。
+ *       list_dir（-a）、run_bash、输出截断、工具描述 example usage（P2-1）、
+ *       记忆读写、skills 索引、web-search 解析器、AGENTS.md 项目级指令加载与优先级。
  *
  * 运行：bun test  或  bun run tests/tools.test.ts
  */
@@ -16,6 +16,7 @@ import {
   clipOutput,
   summarizeDiff,
   DEFAULT_OUTPUT_LIMIT,
+  tools,
 } from "../src/tools";
 import {
   loadState,
@@ -145,6 +146,35 @@ test("run_bash 执行命令并返回输出", async () => {
 
 test("summarizeDiff 相同内容返回无变化", () => {
   expect(summarizeDiff("abc", "abc")).toBe("（无变化）");
+});
+
+// ---------- 工具描述 ACI 化（P2-1） ----------
+
+test("5 个工具 description 均带 example usage（P2-1 ACI 化）", () => {
+  expect(tools.length).toBe(5);
+  const names = tools.map((t) => t.function.name);
+  expect(names).toEqual(["run_script", "read_file", "write_file", "list_dir", "run_bash"]);
+  for (const t of tools) {
+    const desc = t.function.description;
+    expect(desc).toContain("示例：");
+    // 示例必须是真实的 JSON 参数形态（以 { 开头），而不是空话
+    const examplePart = desc.slice(desc.indexOf("示例："));
+    expect(examplePart).toMatch(/\{"/);
+  }
+  // 必填参数在 schema 中声明
+  for (const t of tools) {
+    const fn = t.function;
+    for (const req of fn.parameters.required) {
+      expect(fn.parameters.properties[req]).toBeDefined();
+    }
+  }
+});
+
+test("系统提示词 [能力] 区块工具描述带示例（P2-1 双保险）", () => {
+  const prompt = buildSystemPrompt({ state: loadState(), project: "proj" });
+  expect(prompt).toContain("示例：{\"code\":\"console.log(1+1)\"}");
+  expect(prompt).toContain("示例：{\"path\":\"src/tools.ts\"}");
+  expect(prompt).toContain("示例：{\"command\":\"bun test\"}");
 });
 
 // ---------- 记忆读写 ----------
