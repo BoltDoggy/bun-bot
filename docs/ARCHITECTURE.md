@@ -1,6 +1,6 @@
 # 现状分析（as-is）
 
-基于对 index.ts / src/ / skills/ / tests/ 的实际阅读与统计，更新于 **M1（P0+P1）+ skills 能力 + AGENTS.md 项目指令 + P2-1 ~ P2-4 + P3 质量与防护 + P4 通用化（可在任意项目使用）全部落地之后**。
+基于对 index.ts / src/ / skills/ / tests/ 的实际阅读与统计，更新于 **M1（P0+P1）+ skills 能力 + AGENTS.md 项目指令 + P2-1 ~ P2-4 + P3 质量与防护 + P4 通用化（可在任意项目使用）+ P5 全平台分发（GitHub Actions 构建 + 安装脚本）全部落地之后**。
 
 ## 快照数据
 
@@ -8,6 +8,7 @@
 | --- | --- |
 | index.ts | 318 行 / 15.6 KB（入口：CLI 解析（--stream / --self / --resume / --interactive）+ runAgentLoop 主循环 + 记忆读写钩子 + P2-3 预算检查 + P2-4 checkpoint + P3-2 测试闸门收尾 + P3-4 审计日志钩子 + P4-10 交互模式 REPL） |
 | src/ | tools.ts 547 行 / 26 KB · memory.ts 447 行 / 13.3 KB（含 checkpoint + P4-4/9）· context.ts 189 行 / 11.7 KB（P4-2）· config.ts 137 行 / 5.8 KB（P4-3/8）· gate.ts 190 行 / 8.4 KB（P4-5）· budget.ts 103 行 / 3.9 KB · git.ts 69 行 / 2.7 KB · audit.ts 76 行 / 2.6 KB（P4-4）· interactive.ts 55 行 / 2.3 KB（P4-10）· bin/bun-bot.ts 114 行（P4-6 CLI） |
+| release（P5） | `.github/workflows/build.yml`（81 行：矩阵 6 平台 + tag 发布 + 手动 artifact）· scripts/build.sh（59 行：本地/CI 共用构建）· scripts/install.sh（145 行：POSIX 安装脚本）· scripts/install.ps1（73 行：Windows 安装脚本） |
 | 工具数量 | 6 个：`run_script` / `read_file` / `write_file` / `list_dir` / `run_bash` / `update_plan`（skills 不加新工具） |
 | 工具描述 ACI 化 | ✅ P2-1 已完成：6 个工具 `description` 均带「示例：」JSON 参数形态的 example usage，参数语义同步打磨；系统提示词 [能力] 区块带极简 few-shot（双保险） |
 | 任务模式 | ✅ P2-2 已完成：`--self` 注入 [任务模式] 区块（先 plan 后执行、逐项勾选、未完成计划续跑提示）；`update_plan` 工具全量覆盖式创建/勾选计划；`AgentState.activePlan` 持久化 + MEMORY.md「当前任务计划」区块；主循环结束重载 state 防覆盖 |
@@ -27,12 +28,17 @@
 | 沙箱权限分级 | ✅ P3-3 已完成：路径（cwd / path）默认限制工作区内（`BUN_BOT_ALLOW_OUTSIDE_CWD=1` 放行）；`run_bash` 危险命令黑名单（rm -rf /、git push、fork bomb、sudo、设备写入等）直接拒绝；`BUN_BOT_PERMISSIONS=ask` 时写操作命令需确认 |
 | 审计日志 | ✅ P3-4 已完成：`src/audit.ts` —— 每次工具调用入参/出参摘要落盘 `AUDIT.log.jsonl`（gitignore），`appendAudit` 内部防御性截断（400 / 500），`loadAudit` 最新在前 |
 | 编译产物自举 | ✅ 已落地：`run_script` spawn 自身（`process.execPath`：源码时=bun、编译时=编译产物）；入口 `run <script>` 子命令（index.ts 拦截于 API key 检查前）用内嵌运行时执行外部脚本 —— `bun build --compile` 后无 bun 环境也能跑（端到端实测：PATH 仅 /usr/bin:/bin 下 `./bun-bot-demo run <script>` exitCode 0，Bun API / 相对 import / 顶层 await 全可用） |
-| 自测 | 76 用例 / 447 expect，零外部依赖（`bun test`）；web-search 另有 `self-test.ts --online` 在线实测 |
+| 全平台分发 | ✅ P5 已完成：`.github/workflows/build.yml` 原生矩阵构建 6 平台（ubuntu-latest → linux-x64 / ubuntu-24.04-arm → linux-arm64 / macos-13 → darwin-x64 / macos-latest → darwin-arm64 / windows-latest → windows-x64 / windows-11-arm → windows-arm64 实验性），tag `v*` 自动发布 Release（每个产物附 `.sha256`）、手动触发只出 artifact；`scripts/install.sh`（macOS/Linux）+ `scripts/install.ps1`（Windows）一行安装：检测平台 → 下载 → SHA256 校验 → 安装 → PATH；`scripts/build.sh` 本地与 CI 共用（bun install → bun test → bun build --compile → .sha256） |
+| 自测 | 85 用例 / 490 expect，零外部依赖（`bun test`）；web-search 另有 `self-test.ts --online` 在线实测 |
 
 ## 模块解剖
 
 ```text
 index.ts              入口：run 子命令自举（编译产物自带运行时）+ CLI 解析（--stream / --self / --resume / --interactive）+ runAgentLoop 主循环 + 记忆读写钩子 + 预算检查 + checkpoint + 测试闸门收尾 + 交互模式 REPL
+.github/workflows/     P5 发布工作流：build.yml —— 矩阵 6 平台（tag v* 触发 Release + workflow_dispatch 手动 artifact）
+scripts/build.sh       P5 构建脚本（本地/CI 共用）：bun install → bun test → bun build --compile → SHA256 校验文件
+scripts/install.sh     P5 安装脚本（POSIX sh）：检测平台 → 下载（latest/指定版本）→ SHA256 校验（失败中止）→ install -m 0755 → PATH 提示
+scripts/install.ps1    P5 安装脚本（PowerShell）：架构检测 → 下载 .exe → Get-FileHash 校验 → 装到 %LOCALAPPDATA% → 加用户 PATH
 src/tools.ts          工具注册表：6 个工具的定义与执行器（run_script spawn 自身：编译产物自举；P4-7 readonly 拒绝 + ask 白名单；permissionMode 接配置）
 src/config.ts         项目/全局配置（P4-3/8）：loadConfig（环境变量 > .bunbot.json > ~/.bun-bot/config.json > 默认）+ API key fallback
 src/context.ts        系统提示词组装：[身份] [能力] [项目] [记忆] [任务模式] [规则] + skills 索引 + AGENTS.md 约束声明 + contextWarnings 展示
@@ -44,7 +50,7 @@ src/interactive.ts     交互模式（P4-10）：driveInteractive / isExitInput 
 src/audit.ts           审计日志（P3-4）：appendAudit / loadAudit —— 落盘 .bunbot/AUDIT.log.jsonl
 bin/bun-bot.ts         CLI 分发（P4-6）：init / --version / --help / 透传 index.ts（bun link 全局安装）
 skills/               组合操作库：skills/<name>/SKILL.md + 实现 + 离线样本 + 自测
-tests/                self-test 用例 76 / 447 expect（tools + memory + checkpoint + skills + AGENTS.md + P2/P3/P4 各闸门，零外部依赖）
+tests/                self-test 用例 85 / 490 expect（tools + memory + checkpoint + skills + AGENTS.md + P2/P3/P4 各闸门 + P5 release，零外部依赖）
 ```
 
 ## 工具集（6 个，description 均带 example usage）
@@ -57,6 +63,16 @@ tests/                self-test 用例 76 / 447 expect（tools + memory + checkp
 | `list_dir` | 列目录（`-a` 显示隐藏文件、`depth` 限制递归深度） | `{"path":".","all":true,"depth":2}` |
 | `run_bash` | shell 命令，cwd 默认工作区，可跑 git / bun test 等；P3-1 写操作命令前自动 git 快照；P3-3 危险命令被权限系统拒绝 | `{"command":"bun test"}` |
 | `update_plan` | 更新任务计划（任务模式，P2-2）：全量覆盖式创建/勾选，进度写回 AGENT_STATE.json 跨会话保存 | `{"title":"新增工具","items":[{"text":"注册","done":false}]}` |
+
+## P5 全平台分发（2026-08 完成）
+
+| 项 | 落地 |
+| --- | --- |
+| 构建工作流 | `.github/workflows/build.yml`：`on` = push tag `v*` + workflow_dispatch；`strategy.matrix` 6 平台（ubuntu-latest / ubuntu-24.04-arm / macos-13 / macos-latest / windows-latest / windows-11-arm），windows-arm64 标 `experimental: true` + `continue-on-error` 不阻塞；步骤 = checkout → setup-bun → `bash scripts/build.sh <target>` → upload-artifact（dist/*）→ 若 tag 触发 `softprops/action-gh-release` 发布 Release（含 .sha256） |
+| 构建脚本 | `scripts/build.sh [target]`：bun install → **bun test（测试闸门先绿才出产物）** → `bun build --compile index.ts --outfile dist/bun-bot-<target>[.exe]` → 生成 `.sha256`（sha256sum / shasum 兜底）；target 白名单校验；缺省自动检测当前平台（与 install.sh 同映射） |
+| 安装脚本（unix） | `scripts/install.sh`（POSIX sh，`set -eu`）：`detect_target`（uname -s/-m → darwin/linux/windows × x64/arm64）；URL = `$BASE/latest/download/` 或 `$BASE/download/v<版本>/`；curl/wget 下载 → **SHA256 校验失败必须中止**（sha256sum -c / shasum -a 256 -c）→ `install -m 0755` 装到 ~/.local/bin（/usr/local/bin 可写则用之）→ PATH 提示；环境变量可覆盖：`BUN_BOT_REPO` / `BUN_BOT_VERSION` / `BUN_BOT_INSTALL_DIR` / `BUN_BOT_TARGET` / `BUN_BOT_BASE_URL` |
+| 安装脚本（windows） | `scripts/install.ps1`：`PROCESSOR_ARCHITECTURE` → x64/arm64；`Invoke-WebRequest` 下载 .exe → `Get-FileHash` SHA256 校验（失败删除并中止）→ 装到 `%LOCALAPPDATA%\bun-bot\bin` → `SetEnvironmentVariable` 加用户 PATH |
+| 端到端验证 | `tests/p5-release.test.ts`（9 用例 / 44 expect）：workflow 矩阵与触发断言；build.sh 关键逻辑断言；install.sh 用本地 `Bun.serve` mock release 服务器（`BUN_BOT_BASE_URL` 指向）跑真实下载 → 校验 → 安装（可执行位用 `statSync().mode & 0o111`）；windows .exe 命名；指定版本路径；校验失败中止且不落盘；install.ps1 关键逻辑断言 |
 
 ## 任务模式（P2-2）
 
@@ -131,6 +147,7 @@ tests/                self-test 用例 76 / 447 expect（tools + memory + checkp
 8. ~~长任务无目标锚点~~ → P2-2 任务模式：agent 首轮产出 plan、逐项勾选，进度写回 `AGENT_STATE.json`（activePlan），中断/重启后从上次断点继续
 9. ~~长任务消息无限增长（context rot）~~ → P2-3 上下文预算：`budget.ts` token 估算 + 最轻档 tool result clearing（最早的 tool 结果摘要化，先保 recall 再迭代 precision），告警写回 contextWarnings
 10. ~~中断丢上下文~~ → P2-4 `--resume` checkpoint：`AGENT_CHECKPOINT.json` 持久化会话消息历史（每次消息变更落盘），中断后恢复完整上下文继续，任务完成自动清除
+11. ~~编译产物只能在本地单平台构建~~ → P5 全平台分发：GitHub Actions 矩阵 6 平台 + tag 自动发布 Release + `scripts/install.sh` / `install.ps1` 一行安装（下载 → SHA256 校验 → 安装）
 
 ## P3 质量与防护（2026-08 完成）
 
