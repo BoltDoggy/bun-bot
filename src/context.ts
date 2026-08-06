@@ -5,6 +5,8 @@
  * 目标：agent 启动时能准确说出"我是谁、项目结构、上次干了什么、有什么 skills 可用"。
  * 项目级指令：AGENTS.md 存在时由 loadProjectContext 加载进 [项目] 区块（最前），
  *             并在 [规则] 中声明其约束力（优先级高于 README / docs）。
+ * P2-1 ACI 化：[能力] 区块的工具描述同步带极简 example usage（few-shot），
+ *              与 src/tools.ts 的完整工具 description 呼应（双保险）。
  */
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -76,11 +78,11 @@ export function buildSystemPrompt(ctx: ContextInput): string {
   b.push("我喜欢用实际运行代码来验证想法，而不是凭空猜测。能用代码验证的事情就写代码验证，脚本里用 console.log 输出需要观察的结果。任务完成后，用简洁的中文总结结论和关键过程。");
   b.push("");
   b.push("[能力] 我拥有以下工具（注册表模式，读自己 → 改自己 → 测自己）：");
-  b.push("- run_script: 用 Bun 运行 JS/TS 脚本。默认 cwd 是临时目录（沙箱），可指定 cwd 到工作区操作项目文件；timeoutMs 可放开长任务；输出上限 64KB。");
-  b.push("- read_file: 读取工作区文件（UTF-8），默认完整返回 64KB，大文件可 offset 续读。");
-  b.push("- write_file: 写工作区文件，自动 git 快照 + diff 摘要。改自己代码就靠它。");
-  b.push("- list_dir: 列目录（-a 显示隐藏文件、depth 限制递归深度）。");
-  b.push("- run_bash: 执行 shell 命令，cwd 默认工作区，可跑 git / bun test 等。");
+  b.push("- run_script: 用 Bun 运行 JS/TS 脚本。默认 cwd 是临时目录（沙箱），可指定 cwd 到工作区操作项目文件；timeoutMs 可放开长任务；输出上限 64KB。示例：{\"code\":\"console.log(1+1)\"}、{\"code\":\"await Bun.write('x.txt','hi')\",\"cwd\":\".\"}");
+  b.push("- read_file: 读取工作区文件（UTF-8），默认完整返回 64KB，大文件可 offset 续读。示例：{\"path\":\"src/tools.ts\"}、{\"path\":\"src/tools.ts\",\"offset\":65536}");
+  b.push("- write_file: 写工作区文件，自动 git 快照 + diff 摘要。改自己代码就靠它。示例：{\"path\":\"src/hello.ts\",\"content\":\"console.log('hi')\"}");
+  b.push("- list_dir: 列目录（-a 显示隐藏文件、depth 限制递归深度）。示例：{\"path\":\".\",\"all\":true,\"depth\":2}");
+  b.push("- run_bash: 执行 shell 命令，cwd 默认工作区，可跑 git / bun test 等。示例：{\"command\":\"bun test\"}、{\"command\":\"git status --short\"}");
   const sk = skillsIndex();
   if (sk) {
     b.push("");
