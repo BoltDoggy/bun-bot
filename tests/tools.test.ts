@@ -1,13 +1,13 @@
 /**
- * tools.test.ts — M1 自测闸门
+ * tools.test.ts — M1 自测闸门（+ skills 层）
  *
  * 覆盖：run_script（沙箱 cwd / 工作区 cwd）、read_file（偏移续读）、write_file（diff）、
- *       list_dir（-a）、run_bash、输出截断、记忆读写。
+ *       list_dir（-a）、run_bash、输出截断、记忆读写、skills 索引与 web-search 解析器。
  *
  * 运行：bun test  或  bun run tests/tools.test.ts
  */
 import { test, expect, beforeAll, afterAll } from "bun:test";
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -24,6 +24,8 @@ import {
   statePath,
   memoryPath,
 } from "../src/memory";
+import { skillsIndex, buildSystemPrompt } from "../src/context";
+import { parseBingHtml, parseDdgHtml } from "../skills/web-search/search";
 
 let tmp: string;
 beforeAll(() => {
@@ -166,4 +168,46 @@ test("记忆保存/加载往返 + MEMORY.md 同步生成", () => {
 
 test("workspace() 返回测试沙箱", () => {
   expect(workspace()).toBe(tmp);
+});
+
+// ---------- skills 层 ----------
+
+test("skillsIndex 从 skills/README.md 提取索引表格", () => {
+  mkdirSync(join(tmp, "skills"), { recursive: true });
+  writeFileSync(join(tmp, "skills", "README.md"), [
+    "# skills",
+    "",
+    "## 索引",
+    "",
+    "| skill | 一句话 | 版本 | 自测 |",
+    "| --- | --- | --- | --- |",
+    "| web-search | 联网搜索（Bing + DDG） | v2 | bun run skills/web-search/self-test.ts |",
+  ].join("\n"));
+  const idx = skillsIndex();
+  expect(idx).toContain("web-search");
+  expect(idx).toContain("联网搜索");
+  expect(idx).toContain("self-test.ts");
+});
+
+test("buildSystemPrompt 的 [能力] 区块包含 skills 索引", () => {
+  const prompt = buildSystemPrompt({ state: loadState(), project: "proj" });
+  expect(prompt).toContain("可用 skills");
+  expect(prompt).toContain("web-search");
+  expect(prompt).toContain("skills/<name>/SKILL.md");
+});
+
+test("web-search 解析器对离线样本工作正常", () => {
+  const base = join(import.meta.dir, "..", "skills", "web-search", "samples");
+  const bing = parseBingHtml(readFileSync(join(base, "bing.html"), "utf8"));
+  expect(bing.length).toBe(3);
+  expect(bing[0].url).toBe("https://bun.sh/");
+  expect(bing[0].title).toContain("Bun");
+  expect(bing[0].title).not.toContain("<strong>");
+  expect(bing[0].title).not.toContain("&amp;");
+  expect(bing[0].snippet).toContain("JavaScript runtime");
+
+  const ddg = parseDdgHtml(readFileSync(join(base, "ddg.html"), "utf8"));
+  expect(ddg.length).toBe(2);
+  expect(ddg[0].url).toBe("https://bun.sh/");
+  expect(ddg[0].snippet).toContain("Bundle");
 });
