@@ -7,6 +7,7 @@
  *   3. `bun-bot --help / -h` 输出用法；无参数打印 help 且退出码非 0
  *   4. `bun-bot init` 生成 AGENTS.md 模板 + .bunbot.json + .gitignore 条目（幂等）
  *   5. init 不覆盖已有 AGENTS.md（用户指令保留）
+ *   6. 编译产物入口 index.ts 同样支持 --version / -v / --help / init（API key 检查前拦截）
  *
  * 运行：bun test
  */
@@ -17,6 +18,9 @@ import { join } from "node:path";
 
 const BIN = join(import.meta.dir, "..", "bin", "bun-bot.ts");
 const INDEX = join(import.meta.dir, "..", "index.ts");
+// 版本断言动态读 package.json（与 src/cli.ts 的 VERSION 同源），版本号更新时测试不用跟着改
+const PKG = JSON.parse(readFileSync(join(import.meta.dir, "..", "package.json"), "utf8")) as { version: string };
+const VER = "bun-bot v" + PKG.version;
 
 async function runBin(args: string[], cwd: string): Promise<{ stdout: string; stderr: string; exitCode: number }> {
   const proc = Bun.spawn(["bun", "run", BIN, ...args], { cwd, stdout: "pipe", stderr: "pipe" });
@@ -61,10 +65,10 @@ test("P4 package.json 声明 bin（bun-bot → bin/bun-bot.ts），可 bun link 
 test("P4 CLI --version / -v 输出版本号", async () => {
   const r = await runBin(["--version"], tmp);
   expect(r.exitCode).toBe(0);
-  expect(r.stdout.trim()).toBe("bun-bot v0.1.0");
+  expect(r.stdout.trim()).toBe(VER);
   const r2 = await runBin(["-v"], tmp);
   expect(r2.exitCode).toBe(0);
-  expect(r2.stdout.trim()).toBe("bun-bot v0.1.0");
+  expect(r2.stdout.trim()).toBe(VER);
 });
 
 test("P4 CLI --help 输出用法；无参数打印 help 且退出码非 0", async () => {
@@ -122,10 +126,10 @@ test("P4 编译产物入口 index.ts 支持 --version / --help / init（API key 
   // --version
   const v = await runIndex(["--version"], proj, noKey);
   expect(v.exitCode).toBe(0);
-  expect(v.stdout.trim()).toBe("bun-bot v0.1.0");
+  expect(v.stdout.trim()).toBe(VER);
   const v2 = await runIndex(["-v"], proj, noKey);
   expect(v2.exitCode).toBe(0);
-  expect(v2.stdout.trim()).toBe("bun-bot v0.1.0");
+  expect(v2.stdout.trim()).toBe(VER);
   // --help / 无参数（无参数打印 help 且退出码非 0，与 bin/bun-bot.ts 对齐）
   const h = await runIndex(["--help"], proj, noKey);
   expect(h.exitCode).toBe(0);
