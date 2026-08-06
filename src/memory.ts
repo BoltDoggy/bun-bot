@@ -3,7 +3,10 @@
  *
  * 数据：
  *   AGENT_STATE.json  机器可读状态（决策 / 踩坑 / TODO / 上次任务）
- *   MEMORY.md         人类可读版，git 可追踪，由 AGENT_STATE.json 同步生成
+ *   MEMORY.md         人类可读版，由 AGENT_STATE.json 同步生成
+ *
+ * 注意：两个记忆文件在 .gitignore 中（每次会话写回会产生噪音），
+ *       仅本地持久化，不纳入版本控制。
  *
  * 工作区：默认 process.cwd()，可用环境变量 BUN_BOT_WORKSPACE 覆盖（便于测试沙箱）。
  */
