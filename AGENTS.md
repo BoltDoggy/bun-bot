@@ -29,8 +29,8 @@
 
 - **记忆不提交**：`AGENT_STATE.json` / `MEMORY.md` 在 `.gitignore`（每次会话写回是噪音），仅本地持久化；不要 `git add -f` 它们
 - **写文件前自动快照**：`write_file` 落盘前自动 `git add -A && commit`，所有修改可回溯
-- **`learn/` 只读**：理论地基（5 篇一手材料 + 结构化笔记），不预载进上下文、不修改，仅按需参考
-- **`docs/` 面向自我迭代**：PLAN（路线图）/ ARCHITECTURE（as-is 现状）/ README（索引），代码改动后按需同步
+- **learn/ 只读**：理论地基（5 篇一手材料 + 结构化笔记），不预载进上下文、不修改，仅按需参考
+- **docs/ 面向自我迭代**：PLAN（路线图）/ ARCHITECTURE（as-is 现状）/ README（索引），代码改动后按需同步
 - **本文件优先**：与 README / docs 冲突时以本文件为准
 
 ## 踩坑（非显然行为）
@@ -39,4 +39,3 @@
 - 工具输出上限 64KB，截断带偏移可续读；大文件用 `read_file` 的 `offset` 续读，别假设被截断
 - 长任务（测试 / 安装 / 搜索）给 `timeoutMs` 更大值（如 120000），默认 30s 易超时
 - `Bun.spawn` 的 stdout / stderr 都要消费，否则子进程可能挂起
-- 老项目兼容：只有 `AGENT.md` 时回退加载（标题用实际文件名）；新内容一律写 `AGENTS.md`
