@@ -19,7 +19,7 @@
 
 ### 快速开始
 
-**方式 A：直接安装编译产物（无需 bun 环境，P5）**
+**第一步：安装 bun-bot（编译产物一键安装，无需 bun 环境）**
 
 ```bash
 # macOS / Linux（一行安装：自动检测平台，下载最新 Release → SHA256 校验 → 装到 ~/.local/bin）
@@ -32,9 +32,9 @@ powershell -ExecutionPolicy Bypass -c "irm https://raw.githubusercontent.com/Bol
 > 安装脚本可定制：`BUN_BOT_REPO`（fork/私有源）、`BUN_BOT_VERSION`（默认 latest，指定如 0.1.0）、
 > `--dir` 安装目录等，详见 `scripts/install.sh --help` 与 `scripts/install.ps1 -?`。
 
-**方式 B：在任意项目使用（P4）**
+**第二步：在任意项目使用（P4）**
 
-装好 `bun-bot` 命令后（方式 A），在目标项目目录直接使用：
+装好 `bun-bot` 命令后（第一步），在目标项目目录直接使用：
 
 ```bash
 # 1.（可选）初始化项目：生成 AGENTS.md 模板 + .bunbot.json + .gitignore 条目
