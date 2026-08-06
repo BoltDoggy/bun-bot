@@ -1,15 +1,5 @@
-/**
- * bun-bot — 自我认知为 Bun.js 运行时的 agent
- *
- * M1（P0+P1）：agent 认识自己、能改自己的文件 —— 自修改最小闭环成立。
- *   - P0: 结构化自我认知 + AGENT_STATE.json / MEMORY.md 记忆，启动加载项目上下文
- *   - P1: 工具集扩充 run_script(read/write/list/batch) + read_file/write_file/list_dir/run_bash，
- *         run_script 支持 cwd、可配超时、输出上限 64KB
- *
- * 用法:
- *   bun run index.ts "你的任务"        # 普通模式
- *   bun run index.ts --stream "任务"   # 流式模式（SSE 打字机）
- */
+// bun-bot — 自我认知为 Bun.js 运行时的 agent。M1（P0+P1）：认识自己、能改自己 —— 自修改最小闭环成立（P0: AGENT_STATE.json / MEMORY.md 记忆；P1: run_script + read/write/list/bash 工具集）。
+// 用法: bun run index.ts [--stream] "你的任务"（--stream 走 SSE 流式）
 import { existsSync } from "node:fs";
 import {
   workspace,
