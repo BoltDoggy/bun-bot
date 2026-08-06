@@ -19,9 +19,11 @@ bun run index.ts "查看 git 状态，并给这次改动写个合适的 commit"
 
 - **DeepSeek 的 Function Calling** —— 让模型可以主动声明「我要运行一段代码」；
 - **一个叫 `run_script` 的通用工具** —— 把任意 JS/TS 脚本交给 Bun 真实执行；
-- **一个 15 轮的推理循环** —— 推理 → 行动 → 观察 → 再推理，直到不再需要工具。
+- **一个最多 150 轮的推理循环** —— 推理 → 行动 → 观察 → 再推理，直到不再需要工具。
 
 这三样东西，构成了一个极简的 ReAct agent。而本文想回答的核心问题是：**为什么 100 行就够做任何事？**
+
+> 项目开源地址：[github.com/BoltDoggy/bun-bot](https://github.com/BoltDoggy/bun-bot)，文中的所有代码与运行实录都可以在这个仓库里对照复现。
 
 ---
 
@@ -114,7 +116,14 @@ for (let i = 0; i < MAX_ITERATIONS; i++) {
   }
 
   for (const call of message.tool_calls) {
-    if (call.function.name !== "run_script") { /* 未知工具处理 */ continue; }
+    if (call.function.name !== "run_script") {
+      messages.push({
+        role: "tool",
+        tool_call_id: call.id,
+        content: `未知工具: ${call.function.name}`,
+      });
+      continue;
+    }
     const { code } = JSON.parse(call.function.arguments);
     console.error(`\n--- [run_script] ---\n${code}\n--------------------`);
     const result = await runScript(code);
@@ -218,7 +227,7 @@ await Bun.$`git add -A && git commit -m "${message}"`;
 
 **细节一：流式与聚合。** 项目支持 `--stream` 模式，用 SSE 逐 token 打印内容（打字机效果），同时按 index 增量聚合 `tool_calls`（OpenAI 兼容接口把工具调用的参数按 token 流式切分，需要手动拼接 `arguments` 字符串）。
 
-**细节二：临时文件的清理与隔离。** 每个脚本一个随机文件名，用 `finally` 确保执行后删除；脚本继承 `process.env`，所以进程里能用的环境变量脚本也能用。30 秒超时 + 15 轮上限，是防止「模型自嗨到停不下来」的两道安全阀。
+**细节二：临时文件的清理与隔离。** 每个脚本一个随机文件名，用 `finally` 确保执行后删除；脚本继承 `process.env`，所以进程里能用的环境变量脚本也能用。30 秒超时 + 150 轮上限，是防止「模型自嗨到停不下来」的两道安全阀。
 
 ---
 
@@ -274,12 +283,125 @@ bun run index.ts --stream "同上"
 | 常量 | 默认值 | 说明 |
 | --- | --- | --- |
 | `MODEL` | `deepseek-v4-flash` | 模型名，可换 `deepseek-v4-pro` |
-| `MAX_ITERATIONS` | `15` | 防止 agent 无限循环 |
+| `MAX_ITERATIONS` | `150` | 防止 agent 无限循环 |
 | `BASE_URL` | `https://api.deepseek.com` | API 端点 |
 
 ---
 
-## 7. 局限与可改进的方向
+## 7. 真实运行实录
+
+> 本节的两段输出不是「演示代码」，而是把上面的 `index.ts` **真实跑出来的 stdout/stderr**。`--- [run_script] ---` 之间是模型自己写的脚本，`{"stdout":...}` 是脚本的实测输出。
+
+### 7.1 单次验证：2 的 10 次方
+
+```bash
+bun run index.ts "验证 2 的 10 次方是否等于 1024"
+```
+
+模型**没有**直接背诵答案，而是自己写了代码、运行、再回答：
+
+```text
+--- [run_script] ---
+const result = 2 ** 10;
+console.log("2 的 10 次方 =", result);
+console.log("是否等于 1024?", result === 1024);
+--------------------
+{"stdout":"2 的 10 次方 = 1024\n是否等于 1024? true\n","stderr":"","exitCode":0}
+
+已通过实际运行代码验证：
+
+- `2 ** 10` 计算结果是 **1024**
+- 与 1024 严格相等（`===`），结果为 **true**
+
+结论：**2 的 10 次方确实等于 1024**。
+```
+
+注意回答的措辞——agent 没有说「我觉得」，而是「已通过实际运行代码验证」。这就是第 5 节「代码驱动推理」最直观的样本：**回答本身就带着证据链。**
+
+### 7.2 一步完成的结构化统计：当前目录文件数
+
+```bash
+bun run index.ts "读取当前目录，统计共有多少个文件（不递归）"
+```
+
+这次模型写的脚本更「懂行」——它知道用 `withFileTypes` + `isFile()` 区分文件和目录，而不是简单数一下条目：
+
+```text
+--- [run_script] ---
+import { readdir } from "node:fs/promises";
+
+const entries = await readdir(".", { withFileTypes: true });
+const files = entries.filter(e => e.isFile());
+const dirs = entries.filter(e => e.isDirectory());
+
+console.log("条目总数:", entries.length);
+console.log("文件数（不递归）:", files.length);
+console.log("目录数:", dirs.length);
+console.log("文件列表:", files.map(e => e.name).join(", "));
+--------------------
+{"stdout":"条目总数: 11\n文件数（不递归）: 9\n目录数: 2\n文件列表: blog.md, bun.lock, .gitignore, package.json, README.md, .env, tsconfig.json, index.ts, .env.example\n","stderr":"","exitCode":0}
+
+统计完成，结论如下：
+
+- **当前目录共有 9 个文件**（不递归）
+- 另外还有 2 个子目录，条目总数 11
+
+用 `readdir` 配合 `withFileTypes` 区分了文件和目录，只统计 `isFile()` 的条目，因此排除了子目录和深层内容。
+```
+
+有意思的是：**这次只跑了一轮脚本就完成了任务**，因为模型把「列目录 + 分类 + 统计」压缩进了同一个脚本。这说明 agent 不是机械地一问一答，而是会根据任务的复杂程度自己决定用一轮还是多轮。
+
+---
+
+## 8. 代码解剖：162 行都写了什么？
+
+「100 行」这个说法值得被验证。把 `index.ts`（共 201 行）去掉注释和空行后，有效代码是 **162 行**，按功能可以切成六块：
+
+| 区块 | 有效行数 | 干什么的 |
+| --- | --- | --- |
+| 配置与 CLI 解析 | 13 | API key、`MODEL`、`MAX_ITERATIONS`、`--stream` 开关 |
+| 类型定义 | 9 | `ToolCall` / `ChatMessage` |
+| 工具声明 `tools` | 18 | 唯一的 `run_script` schema |
+| `runScript` | 24 | 临时写文件 → spawn → 超时/截断 → 清理 |
+| `chatCompletion` | 55 | 非流式 + SSE 流式聚合 |
+| Agent 循环 | 36 | 推理循环 + 工具分派 + 结束条件 |
+
+几个值得注意的观察：
+
+- **真正的「agent 本体」只有约 60 行**（`runScript` 24 行 + Agent 循环 36 行）。所谓「100 行做任何事」，魔法全在那 36 行循环里——它不关心任务是什么，只关心「有没有工具调用、结果是什么」。
+- **最长的反而是 `chatCompletion`（55 行），而且一半是在处理流式输出**。如果你不需要打字机效果，删掉流式分支可以再省约 25 行，核心直接逼近 100 行。
+- **工具声明只有 18 行，而且只有一把「万能钥匙」`run_script`**。对比传统 agent 动辄十几个工具的 schema，这就是「通用替代专用」在代码量上的直接体现。
+
+---
+
+## 9. 常见问题（FAQ）
+
+**Q：没有 API key 会怎样？**
+
+启动即报错退出：`请先设置环境变量 DEEPSEEK_API_KEY`。把 key 写进 `.env` 后 Bun 会自动加载，无需 `export`。
+
+**Q：模型会不会一直跑个不停？**
+
+不会。有两道安全阀：单个脚本 **30 秒超时**（`proc.kill()`），整个循环最多 **150 轮**（`MAX_ITERATIONS`）。到顶会强制退出并输出 `达到最大迭代次数`。
+
+**Q：脚本写错了会不会崩溃？**
+
+不会。脚本的 stderr 和退出码会原样回传给模型，模型把它当成调试日志，自己修正后重试——这就是第 2.2 节说的「像程序员一样调试」。
+
+**Q：能不能换成别的模型？**
+
+可以。改顶部 `MODEL` 常量为 `deepseek-v4-pro`，或任何兼容 OpenAI Function Calling 格式的接口。
+
+**Q：agent 能上网、能读本地文件吗？**
+
+能。它执行的是完整 JS/TS：`fetch` 调 API、`node:fs` 读写文件、`Bun.$` 执行 shell，并继承 `process.env`。能力边界就是 Bun 运行时的边界。
+
+**Q：会不会泄露环境变量？**
+
+脚本继承进程的 `process.env`，所以设计上「宿主能用的它都能用」。本地自用没问题；如果做成多租户服务，必须加容器隔离（见第 10 节）。
+
+---
+## 10. 局限与可改进的方向
 
 诚实地说，这个极简架构也有代价：
 
@@ -293,7 +415,7 @@ bun run index.ts --stream "同上"
 
 ---
 
-## 8. 结语
+## 11. 结语
 
 bun-bot 用一个 100 行的循环证明了：**agent 不需要复杂的框架，只需要一个强大的模型、一个通用的执行工具、和一个不打断它的循环。** 当工具从「枚举能力」变成「提供语言运行时」，agent 的能力边界就从一个列表变成了整个语言生态。
 
@@ -301,4 +423,4 @@ bun-bot 用一个 100 行的循环证明了：**agent 不需要复杂的框架�
 
 ---
 
-*技术细节基于项目真实源码（`index.ts`，约 162 行有效代码），核心逻辑约百行。全文可在项目仓库中对照验证。*
+*技术细节基于项目真实源码（`index.ts`，共 201 行，去掉注释与空行后 162 行有效代码），核心逻辑约百行。全文可在项目仓库 [BoltDoggy/bun-bot](https://github.com/BoltDoggy/bun-bot) 中对照验证。*

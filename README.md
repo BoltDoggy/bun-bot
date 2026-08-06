@@ -51,7 +51,7 @@ bun run index.ts "计算斐波那契数列第 30 项"
 | 常量 | 默认值 | 说明 |
 | --- | --- | --- |
 | `MODEL` | `deepseek-v4-flash` | 模型名，可换 `deepseek-v4-pro` |
-| `MAX_ITERATIONS` | `15` | 防止 agent 无限循环 |
+| `MAX_ITERATIONS` | `150` | 防止 agent 无限循环 |
 | `BASE_URL` | `https://api.deepseek.com` | API 端点 |
 
 ## 项目结构
