@@ -54,8 +54,8 @@ bun-bot "分析这个项目的结构并给出建议"
 
 | 参数 | 说明 | 示例 |
 | --- | --- | --- |
-| （无） | 默认非流式执行 | `bun-bot "计算斐波那契数列第 30 项"` |
-| `--stream` | SSE 流式输出 | `bun-bot --stream "..."` |
+| （无） | 默认 SSE 流式输出（逐 token） | `bun-bot "计算斐波那契数列第 30 项"` |
+| `--no-stream` | 关闭流式，任务完成后一次性输出 | `bun-bot --no-stream "..."` |
 | `--self` | 任务模式：先 plan 后执行、逐项勾选、中断可续跑 | `bun-bot --self "给我加一个 read_file 工具并补文档"` |
 | `--resume` | 从上次断点续跑（可不带任务；带任务作为追加指令） | `bun-bot --resume` |
 | `--interactive` | 交互模式：多轮 REPL，对话跨轮保持 | `bun-bot --interactive` |
@@ -126,7 +126,7 @@ bun-bot "分析这个项目的结构并给出建议"
 ### 项目结构
 
 ```
-├── index.ts            # 入口：CLI 命令拦截（init / --version / --help，API key 检查前）+ CLI 解析（--stream / --self / --resume / --interactive）+ run 子命令自举（编译产物自带运行时）+ runAgentLoop 主循环 + 记忆读写钩子
+├── index.ts            # 入口：CLI 命令拦截（init / --version / --help，API key 检查前）+ CLI 解析（--no-stream / --self / --resume / --interactive）+ run 子命令自举（编译产物自带运行时）+ runAgentLoop 主循环 + 记忆读写钩子
 ├── AGENTS.md            # 可选：项目级指令（存在时自动加载，优先级最高）
 ├── .github/
 │   └── workflows/

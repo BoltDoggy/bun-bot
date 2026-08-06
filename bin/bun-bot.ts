@@ -3,7 +3,7 @@
  * bin/bun-bot.ts — CLI 分发入口（P4-6：bun link / bunx 可全局安装）
  *
  * 用法：
- *   bun-bot [--stream] [--self] [--resume] "任务"   启动 agent（代理到 index.ts 主循环）
+ *   bun-bot [--no-stream] [--self] [--resume] "任务"   启动 agent（默认 SSE 流式输出，--no-stream 关闭；代理到 index.ts 主循环）
  *   bun-bot init                                    在当前目录生成项目配置
  *                                                   （AGENTS.md 模板 + .bunbot.json + .gitignore 条目）
  *   bun-bot --version / -v                          显示版本号

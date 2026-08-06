@@ -12,7 +12,7 @@
 ## 运行与构建
 
 - 必填环境变量：`DEEPSEEK_API_KEY`（写入 `.env`，已 gitignore；未设置时 fallback 全局配置 `~/.bun-bot/config.json` 的 `apiKey`）
-- 入口：`bun run index.ts [--stream] [--self] [--resume] [--interactive] "任务"`；`--stream` 走 SSE 流式输出，`--self` 开任务模式（先 plan 后执行、逐项勾选、中断可续跑），`--resume` 从上次断点恢复会话（可不带任务；带任务作为追加指令），`--interactive` 多轮 REPL（可不带任务）；全局 CLI：`bun-bot`（bun link 安装 `bin/bun-bot.ts`，或安装编译产物；CLI 命令逻辑在 `src/cli.ts`，`index.ts` 编译产物入口在 API key 检查前同样拦截支持 `init` / `--version` / `--help`）
+- 入口：`bun run index.ts [--no-stream] [--self] [--resume] [--interactive] "任务"`；默认 SSE 流式输出，`--no-stream` 关闭改一次性输出，`--self` 开任务模式（先 plan 后执行、逐项勾选、中断可续跑），`--resume` 从上次断点恢复会话（可不带任务；带任务作为追加指令），`--interactive` 多轮 REPL（可不带任务）；全局 CLI：`bun-bot`（bun link 安装 `bin/bun-bot.ts`，或安装编译产物；CLI 命令逻辑在 `src/cli.ts`，`index.ts` 编译产物入口在 API key 检查前同样拦截支持 `init` / `--version` / `--help`）
 - 构建与发布（P5）：本地构建 `bash scripts/build.sh [target]`（产物 `dist/bun-bot-<target>[.exe]` + `.sha256`）；GitHub Actions（`.github/workflows/build.yml`）打 tag `v*` 自动构建 6 平台并发布 Release（独立 release job 等全部平台构建完合并统一发布，避免并发竞态），手动触发只出 artifact；用户安装 `curl -fsSL https://raw.githubusercontent.com/BoltDoggy/bun-bot/HEAD/scripts/install.sh | sh`（Windows 用 `install.ps1`，均安装为 `bun-bot` / `bun-bot.exe` 命令，不带平台后缀）
 - 可调变量（优先级：环境变量 > .bunbot.json 项目配置 > ~/.bun-bot/config.json 全局配置 > 默认值）：
   - `BUN_BOT_MODEL` / `model`（默认 `deepseek-v4-flash`）

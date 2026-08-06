@@ -6,7 +6,7 @@
 
 | 项 | 值 |
 | --- | --- |
-| index.ts | 339 行 / 15.9 KB（入口：CLI 命令拦截（init / --version / --help，API key 检查前）+ CLI 解析（--stream / --self / --resume / --interactive）+ runAgentLoop 主循环 + 记忆读写钩子 + P2-3 预算检查 + P2-4 checkpoint + P3-2 测试闸门收尾 + P3-4 审计日志钩子 + P4-10 交互模式 REPL） |
+| index.ts | 341 行 / 16.3 KB（入口：CLI 命令拦截（init / --version / --help，API key 检查前）+ CLI 解析（默认 SSE 流式、--no-stream 关闭 / --self / --resume / --interactive）+ runAgentLoop 主循环 + 记忆读写钩子 + P2-3 预算检查 + P2-4 checkpoint + P3-2 测试闸门收尾 + P3-4 审计日志钩子 + P4-10 交互模式 REPL） |
 | src/ | tools.ts 547 行 / 26 KB · memory.ts 447 行 / 13.3 KB（含 checkpoint + P4-4/9）· context.ts 189 行 / 11.7 KB（P4-2）· config.ts 137 行 / 5.8 KB（P4-3/8）· gate.ts 190 行 / 8.4 KB（P4-5）· budget.ts 103 行 / 3.9 KB · git.ts 69 行 / 2.7 KB · audit.ts 76 行 / 2.6 KB（P4-4）· interactive.ts 55 行 / 2.3 KB（P4-10）· cli.ts 80 行 / 4.1 KB（P4-6 CLI：init / --version / --help）· bin/bun-bot.ts 33 行 / 1.3 KB（复用 cli.ts，bun link 分发） |
 | release（P5） | `.github/workflows/build.yml`（98 行：矩阵 6 平台构建 + 独立 release job 统一发布 + 手动 artifact）· scripts/build.sh（59 行：本地/CI 共用构建）· scripts/install.sh（145 行：POSIX 安装脚本）· scripts/install.ps1（73 行：Windows 安装脚本） |
 | 工具数量 | 6 个：`run_script` / `read_file` / `write_file` / `list_dir` / `run_bash` / `update_plan`（skills 不加新工具） |
@@ -34,7 +34,7 @@
 ## 模块解剖
 
 ```text
-index.ts              入口：run 子命令自举（编译产物自带运行时）+ CLI 命令拦截（init / --version / --help，API key 检查前）+ CLI 解析（--stream / --self / --resume / --interactive）+ runAgentLoop 主循环 + 记忆读写钩子 + 预算检查 + checkpoint + 测试闸门收尾 + 交互模式 REPL
+index.ts              入口：run 子命令自举（编译产物自带运行时）+ CLI 命令拦截（init / --version / --help，API key 检查前）+ CLI 解析（--no-stream / --self / --resume / --interactive）+ runAgentLoop 主循环 + 记忆读写钩子 + 预算检查 + checkpoint + 测试闸门收尾 + 交互模式 REPL
 .github/workflows/     P5 发布工作流：build.yml —— 矩阵 6 平台构建 + 独立 release job（tag v* 触发 Release + workflow_dispatch 手动 artifact）
 scripts/build.sh       P5 构建脚本（本地/CI 共用）：bun install → bun test → bun build --compile → SHA256 校验文件
 scripts/install.sh     P5 安装脚本（POSIX sh）：检测平台 → 下载（latest/指定版本）→ SHA256 校验（失败中止）→ install -m 0755 重命名为 bun-bot → PATH 提示
