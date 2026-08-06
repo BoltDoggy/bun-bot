@@ -7,8 +7,7 @@
  *   .bunbot/AGENT_CHECKPOINT.json   会话级 checkpoint（--resume 断点续跑）：当前会话的消息历史
  *   .bunbot/AUDIT.log.jsonl         审计日志（P3-4，src/audit.ts）
  *   目录名可用 .bunbot.json 的 stateDir 配置（默认 .bunbot），环境变量 > 配置 > 默认。
- *   写状态文件前自动确保目录存在 + .gitignore 追加忽略（幂等），
- *   旧版本在项目根的状态文件（AGENT_STATE.json 等）读取时兼容迁移（不自动删除）。
+ *   写状态文件前自动确保目录存在 + .gitignore 追加忽略（幂等）。
  *
  * P2-2 任务模式：AgentState.activePlan 持久化当前任务的 plan（首轮产出、逐项勾选），
  *               进度跨会话保存 —— 中断/重启后可从上次断点继续（checkpoint 的目标锚点）。
@@ -145,7 +144,7 @@ export const DEFAULT_STATE: AgentState = {
   activePlan: undefined,
 };
 
-/** 读取指定路径的 AGENT_STATE.json；不存在或损坏返回 null（供新旧位置尝试） */
+/** 读取指定路径的 AGENT_STATE.json；状态文件不存在或损坏时返回 null */
 function readStateAt(p: string): AgentState | null {
   try {
     if (existsSync(p)) {
@@ -159,11 +158,10 @@ function readStateAt(p: string): AgentState | null {
 }
 
 /**
- * 读取 AGENT_STATE.json；文件不存在或损坏时返回默认态。
- * P4-4 兼容：新位置（.bunbot/）没有时尝试旧位置（工作区根），读到即用（不自动删除旧文件）。
+ * 读取 AGENT_STATE.json（.bunbot/ 状态目录下）；文件不存在或损坏时返回默认态。
  */
 export function loadState(): AgentState {
-  return readStateAt(statePath()) ?? readStateAt(join(workspace(), STATE_FILE)) ?? { ...DEFAULT_STATE };
+  return readStateAt(statePath()) ?? { ...DEFAULT_STATE };
 }
 
 /** 写回 AGENT_STATE.json（写前确保目录存在 + .gitignore 忽略） */
@@ -260,21 +258,18 @@ export function saveCheckpoint(messages: ChatMessage[]): void {
 }
 
 /**
- * 读取会话 checkpoint；不存在或损坏时返回 null。
- * P4-4 兼容：新位置（.bunbot/）没有时尝试旧位置（工作区根）。
+ * 读取会话 checkpoint（.bunbot/ 状态目录下）；不存在或损坏时返回 null。
  */
 export function loadCheckpoint(): ChatMessage[] | null {
-  const tryRead = (p: string): ChatMessage[] | null => {
-    try {
-      if (!existsSync(p)) return null;
-      const raw = JSON.parse(readFileSync(p, "utf8")) as Partial<CheckpointData>;
-      if (!Array.isArray(raw.messages) || raw.messages.length === 0) return null;
-      return raw.messages;
-    } catch {
-      return null;
-    }
-  };
-  return tryRead(checkpointPath()) ?? tryRead(join(workspace(), CHECKPOINT_FILE));
+  try {
+    const p = checkpointPath();
+    if (!existsSync(p)) return null;
+    const raw = JSON.parse(readFileSync(p, "utf8")) as Partial<CheckpointData>;
+    if (!Array.isArray(raw.messages) || raw.messages.length === 0) return null;
+    return raw.messages;
+  } catch {
+    return null;
+  }
 }
 
 /** 清除会话 checkpoint（任务正常完成时调用，避免残留干扰下次运行） */
