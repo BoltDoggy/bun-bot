@@ -18,7 +18,8 @@
 ```bash
 bun install
 cp .env.example .env   # 填入 DEEPSEEK_API_KEY
-bun run index.ts "计算斐波那契数列第 30 项"
+bun run index.ts "计算斐波那契数列第 30 项"            # 默认非流式
+bun run index.ts --stream "计算斐波那契数列第 30 项"   # SSE 流式输出（--stream 可选）
 ```
 
 ## 工具集
@@ -26,10 +27,10 @@ bun run index.ts "计算斐波那契数列第 30 项"
 | 工具 | 说明 |
 | --- | --- |
 | `run_script` | 用 Bun 运行 JS/TS（cwd 可指定工作区，默认 tmpdir；超时可配；输出上限 64KB 带偏移） |
-| `read_file` | 读工作区文件，默认完整返回 64KB，可 offset 续读 |
+| `read_file` | 读工作区文件，默认完整返回 64KB，可 offset 续读（单次硬上限 1MB） |
 | `write_file` | 写工作区文件，自动 git 快照 + diff 摘要 |
-| `list_dir` | 列目录（`-a` 显示隐藏文件、`depth` 限制深度） |
-| `run_bash` | 执行 shell 命令（cwd 默认工作区） |
+| `list_dir` | 列目录（`-a` 显示隐藏文件、`depth` 限制深度，最大 8） |
+| `run_bash` | 执行 shell 命令（cwd 默认工作区，超时可配） |
 
 ## 项目结构
 
@@ -38,11 +39,13 @@ bun run index.ts "计算斐波那契数列第 30 项"
 ├── src/
 │   ├── tools.ts        # 工具注册表（新增工具在此注册）
 │   ├── context.ts      # 系统提示词组装：身份 + 项目 + 记忆 + 规则
-│   ├── memory.ts       # 记忆读写：AGENT_STATE.json / MEMORY.md
+│   ├── memory.ts       # 记忆读写：AGENT_STATE.json / MEMORY.md + 项目上下文
 │   └── git.ts          # write_file 前的安全快照
-├── tests/              # self-test 用例（修改自身代码后的验证闸门）
+├── tests/
+│   └── tools.test.ts   # 12 个 self-test 用例（修改自身代码后的验证闸门）
 ├── AGENT_STATE.json    # 机器可读记忆
 ├── MEMORY.md           # 人类可读记忆（git 可追踪）
+├── blog.md             # agent 真实运行实录（自我进化过程）
 └── docs/               # 迭代计划与架构文档
 ```
 
@@ -53,6 +56,7 @@ bun run index.ts "计算斐波那契数列第 30 项"
 | `DEEPSEEK_API_KEY` | - | API Key（必填） |
 | `BUN_BOT_MODEL` | `deepseek-v4-flash` | 模型名 |
 | `BUN_BOT_MAX_ITERATIONS` | `150` | 防止 agent 无限循环 |
+| `BUN_BOT_WORKSPACE` | `process.cwd()` | 工作区根目录（agent 可读写的范围，测试沙箱用它覆盖） |
 
 ## 自测
 
