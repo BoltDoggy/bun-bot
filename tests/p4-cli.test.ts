@@ -16,9 +16,25 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 const BIN = join(import.meta.dir, "..", "bin", "bun-bot.ts");
+const INDEX = join(import.meta.dir, "..", "index.ts");
 
 async function runBin(args: string[], cwd: string): Promise<{ stdout: string; stderr: string; exitCode: number }> {
   const proc = Bun.spawn(["bun", "run", BIN, ...args], { cwd, stdout: "pipe", stderr: "pipe" });
+  const [stdout, stderr, exitCode] = await Promise.all([
+    new Response(proc.stdout).text(),
+    new Response(proc.stderr).text(),
+    proc.exited,
+  ]);
+  return { stdout, stderr, exitCode };
+}
+
+/** 跑 index.ts（编译产物入口，bun build --compile index.ts 的等价源码入口） */
+async function runIndex(
+  args: string[],
+  cwd: string,
+  env: Record<string, string> = {},
+): Promise<{ stdout: string; stderr: string; exitCode: number }> {
+  const proc = Bun.spawn(["bun", "run", INDEX, ...args], { cwd, stdout: "pipe", stderr: "pipe", env: { ...process.env, ...env } });
   const [stdout, stderr, exitCode] = await Promise.all([
     new Response(proc.stdout).text(),
     new Response(proc.stderr).text(),
@@ -97,4 +113,37 @@ test("P4 CLI init 不覆盖已有 AGENTS.md（用户指令保留）", async () =
   // 其他文件照常生成
   expect(existsSync(join(proj, ".bunbot.json"))).toBe(true);
   expect(existsSync(join(proj, ".gitignore"))).toBe(true);
+});
+
+test("P4 编译产物入口 index.ts 支持 --version / --help / init（API key 检查前拦截，用户无需源码即可用全功能 CLI）", async () => {
+  const proj = join(tmp, "index-cli");
+  mkdirSync(proj, { recursive: true });
+  const noKey = { DEEPSEEK_API_KEY: "" }; // 验证这些命令不依赖 API key
+  // --version
+  const v = await runIndex(["--version"], proj, noKey);
+  expect(v.exitCode).toBe(0);
+  expect(v.stdout.trim()).toBe("bun-bot v0.1.0");
+  const v2 = await runIndex(["-v"], proj, noKey);
+  expect(v2.exitCode).toBe(0);
+  expect(v2.stdout.trim()).toBe("bun-bot v0.1.0");
+  // --help / 无参数（无参数打印 help 且退出码非 0，与 bin/bun-bot.ts 对齐）
+  const h = await runIndex(["--help"], proj, noKey);
+  expect(h.exitCode).toBe(0);
+  expect(h.stdout).toContain("bun-bot v");
+  expect(h.stdout).toContain("init");
+  expect(h.stdout).toContain("--version");
+  const n = await runIndex([], proj, noKey);
+  expect(n.exitCode).toBe(1);
+  expect(n.stdout).toContain("bun-bot v");
+  // init 生成项目配置（不依赖 API key）
+  const i = await runIndex(["init"], proj, noKey);
+  expect(i.exitCode).toBe(0);
+  expect(i.stdout).toContain("init 完成");
+  expect(existsSync(join(proj, "AGENTS.md"))).toBe(true);
+  expect(existsSync(join(proj, ".bunbot.json"))).toBe(true);
+  expect(readFileSync(join(proj, ".gitignore"), "utf8")).toContain(".bunbot/");
+  // 正常任务模式不被误伤：无 API key 时仍报 key 错误（而非 help）
+  const t = await runIndex(["随便一个任务"], proj, noKey);
+  expect(t.exitCode).toBe(1);
+  expect(t.stderr).toContain("DEEPSEEK_API_KEY");
 });
