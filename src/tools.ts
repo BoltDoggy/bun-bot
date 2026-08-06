@@ -8,6 +8,9 @@
  *   list_dir    列目录（-a 显示隐藏文件、深度限制）
  *   run_bash    执行 shell 命令（cwd 可指定工作区）
  *
+ * P2-1 ACI 化：5 个工具的 description 均带 example usage（工具设计五原则之五——
+ *              描述/spec 会进上下文，能直接引导工具调用行为；示例即 few-shot）。
+ *
  * 新增工具：往 registry 数组里加一个 { def, run } 即可，agent 就能看到并调用它。
  */
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
@@ -228,13 +231,17 @@ const registry: RegisteredTool[] = [
       type: "function",
       function: {
         name: "run_script",
-        description: "用 Bun 运行一段 JavaScript/TypeScript 脚本，返回 stdout、stderr、退出码。默认 cwd 是临时目录（沙箱），可指定 cwd 到工作区来读写项目文件。输出上限 64KB，截断处带偏移。",
+        description:
+          "用 Bun 运行一段 JavaScript/TypeScript 脚本，返回 JSON：{ cwd, stdout, stderr, exitCode, timedOut }。" +
+          "默认 cwd 是临时目录（沙箱），可指定 cwd 到工作区来读写项目文件。输出上限 64KB，截断处带偏移。" +
+          "示例：{\"code\":\"console.log(1+1)\"}（沙箱算个表达式）；" +
+          "{\"code\":\"await Bun.write('x.txt','hi')\",\"cwd\":\".\"}（在工作区落文件，顶层 await 可用）",
         parameters: {
           type: "object",
           properties: {
-            code: { type: "string", description: "要执行的完整脚本内容" },
-            cwd: { type: "string", description: "可选。脚本工作目录，相对路径基于工作区。不传则用临时目录" },
-            timeoutMs: { type: "number", description: "可选。超时毫秒数，默认 30000，长任务可放开" },
+            code: { type: "string", description: "要执行的完整 JS/TS 脚本源码（必填）。脚本内用 console.log 输出需要观察的结果" },
+            cwd: { type: "string", description: "可选。脚本工作目录，相对路径基于工作区（如 \".\" = 工作区根）。不传则用临时沙箱目录" },
+            timeoutMs: { type: "number", description: "可选。超时毫秒数，默认 30000，长任务可放开（如 120000）" },
           },
           required: ["code"],
         },
@@ -247,13 +254,16 @@ const registry: RegisteredTool[] = [
       type: "function",
       function: {
         name: "read_file",
-        description: "读取工作区文件（UTF-8 文本），默认完整返回（上限 64KB）。大文件用 offset 偏移续读。",
+        description:
+          "读取工作区文件（UTF-8 文本），默认完整返回（上限 64KB）。超出部分在返回的 totalBytes / returnedRange / truncated 里说明，用 offset 偏移续读。" +
+          "示例：{\"path\":\"src/tools.ts\"}（读前 64KB）；" +
+          "{\"path\":\"src/tools.ts\",\"offset\":65536}（从偏移 65536 续读后半段）",
         parameters: {
           type: "object",
           properties: {
-            path: { type: "string", description: "文件路径，相对工作区或绝对路径" },
-            offset: { type: "number", description: "可选。起始字节偏移，默认 0" },
-            maxBytes: { type: "number", description: "可选。读取字节数上限，默认 65536" },
+            path: { type: "string", description: "文件路径，相对工作区或绝对路径（必填）" },
+            offset: { type: "number", description: "可选。起始字节偏移，默认 0；大文件配合返回的 returnedRange 续读" },
+            maxBytes: { type: "number", description: "可选。本次读取字节数上限，默认 65536，硬上限 1000000" },
           },
           required: ["path"],
         },
@@ -266,12 +276,15 @@ const registry: RegisteredTool[] = [
       type: "function",
       function: {
         name: "write_file",
-        description: "写工作区文件。自动创建父目录、自动 git 快照、返回行级 diff 摘要。这是 agent 修改自身代码的落盘工具。",
+        description:
+          "写工作区文件（覆盖式）。自动创建父目录、落盘前自动 git 快照（可回滚），返回 JSON：{ path, bytesWritten, gitSnapshot, diff }（diff 为行级摘要）。" +
+          "这是 agent 修改自身代码的落盘工具。" +
+          "示例：{\"path\":\"src/hello.ts\",\"content\":\"console.log('hi')\"}（新建）；同参再写即覆盖已有文件",
         parameters: {
           type: "object",
           properties: {
-            path: { type: "string", description: "文件路径，相对工作区或绝对路径" },
-            content: { type: "string", description: "要写入的完整文件内容" },
+            path: { type: "string", description: "文件路径，相对工作区或绝对路径（必填）。父目录自动创建" },
+            content: { type: "string", description: "要写入的完整文件内容（必填，覆盖式写入，非追加）" },
           },
           required: ["path", "content"],
         },
@@ -284,7 +297,9 @@ const registry: RegisteredTool[] = [
       type: "function",
       function: {
         name: "list_dir",
-        description: "列出目录内容（带缩进的文件树）。默认不显示隐藏文件，深度 3。",
+        description:
+          "列出目录内容（带缩进的文件树），返回 JSON：{ root, depth, entries, tree }。默认不显示隐藏文件，深度 3（最大 8）。" +
+          "示例：{\"path\":\".\",\"depth\":2}（看工作区根两层）；{\"path\":\".\",\"all\":true}（含隐藏文件）",
         parameters: {
           type: "object",
           properties: {
@@ -303,13 +318,16 @@ const registry: RegisteredTool[] = [
       type: "function",
       function: {
         name: "run_bash",
-        description: "在 shell 中执行命令（bash -c）。默认 cwd 是工作区，可指定其他目录。可用于 git、bun install、测试等。输出上限 64KB。",
+        description:
+          "在 shell 中执行命令（bash -c），返回 JSON：{ cwd, command, stdout, stderr, exitCode, timedOut }。" +
+          "默认 cwd 是工作区，可指定其他目录。可用于 git、bun install、测试等。输出上限 64KB。" +
+          "示例：{\"command\":\"bun test\"}（跑测试闸门）；{\"command\":\"git status --short\"}（看改动）",
         parameters: {
           type: "object",
           properties: {
-            command: { type: "string", description: "要执行的 shell 命令" },
+            command: { type: "string", description: "要执行的 shell 命令字符串（必填，bash -c 语义，支持管道/变量）" },
             cwd: { type: "string", description: "可选。执行目录，相对路径基于工作区，默认工作区" },
-            timeoutMs: { type: "number", description: "可选。超时毫秒数，默认 30000" },
+            timeoutMs: { type: "number", description: "可选。超时毫秒数，默认 30000，长任务可放开（如 120000）" },
           },
           required: ["command"],
         },
