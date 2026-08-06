@@ -585,6 +585,8 @@ test("P3-1 run_bash 写操作命令前自动 git 快照，只读命令不产生�
     command: "git init -q && git config user.email p3@test && git config user.name p3-test && git add -A && git commit -qm init",
   })));
   expect(init.exitCode).toBe(0);
+  const initHead = await currentHead(tmp);
+  expect(initHead).toMatch(/^[0-9a-f]{40}$/);
   expect(await hasUncommittedChanges(tmp)).toBe(false);
   // 只读命令：不触发快照（无 gitSnapshot 字段）
   const ro = JSON.parse(await executeTool("run_bash", JSON.stringify({ command: "git status --short" })));
@@ -600,10 +602,8 @@ test("P3-1 run_bash 写操作命令前自动 git 快照，只读命令不产生�
   expect(w.gitSnapshot).toContain("已提交 git 快照");
   // 快照已把 p3-dirty.txt 入库；p3-b.txt 是新未跟踪文件 → 仍 dirty
   expect(await hasUncommittedChanges(tmp)).toBe(true);
-  // 回滚验证：reset 到快照后的 HEAD + clean 清未跟踪 → 两个文件都消失
-  const head = await currentHead(tmp);
-  expect(head).toMatch(/^[0-9a-f]{40}$/);
-  const rev = await revertToHead(head!, tmp);
+  // 回滚验证：reset 到会话前 HEAD（init）+ clean 清未跟踪 → 会话内改动全部消失
+  const rev = await revertToHead(initHead!, tmp);
   expect(rev.reverted).toBe(true);
   expect(existsSync(join(tmp, "p3-dirty.txt"))).toBe(false);
   expect(existsSync(join(tmp, "p3-b.txt"))).toBe(false);
