@@ -18,7 +18,7 @@
 | read_file 硬上限 | 1MB（`MAX_READ_BYTES`） |
 | 记忆 | `AGENT_STATE.json` / `MEMORY.md` 本地跨会话持久化（gitignore，不纳入版本控制，避免每次会话的写回噪音） |
 | 自修改安全 | `write_file` 落盘前自动 git 快照 + 返回行级 diff 摘要 |
-| 自测 | 17 用例 / 65 expect，零外部依赖（`bun test`）；web-search 另有 `self-test.ts --online` 在线实测 |
+| 自测 | 17 用例 / 67 expect，零外部依赖（`bun test`）；web-search 另有 `self-test.ts --online` 在线实测 |
 
 ## 模块解剖
 
