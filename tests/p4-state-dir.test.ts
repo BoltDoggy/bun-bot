@@ -4,8 +4,7 @@
  * 验证：
  *   1. 状态文件默认移入 .bunbot/（statePath / memoryPath / checkpointPath / auditPath）
  *   2. 模拟 git 仓库跑一轮：写状态文件后 .gitignore 自动追加忽略 → git status 无状态文件噪音
- *   3. 旧位置（工作区根）状态文件兼容读取（迁移读取不自动删除）
- *   4. stateDir 可配置（.bunbot.json 的 stateDir 生效）
+ *   3. stateDir 可配置（.bunbot.json 的 stateDir 生效）
  *
  * 运行：bun test
  */
@@ -14,7 +13,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
-  workspace, stateDir, statePath, memoryPath, checkpointPath,
+  stateDir, statePath, memoryPath, checkpointPath,
   saveState, loadState, syncMemoryFile, saveCheckpoint, loadCheckpoint,
 } from "../src/memory";
 import { auditPath, appendAudit } from "../src/audit";
@@ -96,23 +95,6 @@ test("P4 模拟 git 仓库跑一轮：.gitignore 自动忽略状态目录，git 
     const done = JSON.parse(await executeTool("run_bash", JSON.stringify({ command: "git status --porcelain" })));
     expect(done.exitCode).toBe(0);
     expect(done.stdout.trim()).toBe("");
-  } finally {
-    process.env.BUN_BOT_WORKSPACE = oldWs!;
-  }
-});
-
-test("P4 旧位置兼容：工作区根的状态文件可被读取（迁移读取不自动删除）", () => {
-  const base = join(tmp, "legacy-proj");
-  mkdirSync(base, { recursive: true });
-  writeFileSync(join(base, "AGENT_STATE.json"), JSON.stringify({ version: 1, lastTask: "legacy 任务" }));
-  const oldWs = process.env.BUN_BOT_WORKSPACE;
-  process.env.BUN_BOT_WORKSPACE = base;
-  try {
-    const s = loadState();
-    expect(s.lastTask).toBe("legacy 任务");
-    // 旧文件保留（不自动删除，由用户决定迁移）
-    expect(existsSync(join(base, "AGENT_STATE.json"))).toBe(true);
-    expect(workspace()).toBe(base);
   } finally {
     process.env.BUN_BOT_WORKSPACE = oldWs!;
   }
