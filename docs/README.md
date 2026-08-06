@@ -2,8 +2,8 @@
 
 | 文档 | 说明 |
 | --- | --- |
-| [PLAN.md](./PLAN.md) | **主计划**：拥抱 1M 上下文，把 bun-bot 从"脚本执行器"迭代成"能读懂自己、修改自己、记住自己"的长期 agent。P0/P1/skills/AGENTS.md/P2-1/P2-2 已完成并勾选，P2 剩 budget.ts + checkpoint，P3 待办 |
-| [ARCHITECTURE.md](./ARCHITECTURE.md) | 现状分析（as-is）：随代码演进更新，当前快照基于 M1（P0+P1）+ skills 能力 + AGENTS.md + P2-1 工具描述 ACI 化 + P2-2 任务模式落地后的实际代码 |
+| [PLAN.md](./PLAN.md) | **主计划**：拥抱 1M 上下文，把 bun-bot 从"脚本执行器"迭代成"能读懂自己、修改自己、记住自己"的长期 agent。P0/P1/skills/AGENTS.md/P2-1/P2-2/P2-3 已完成并勾选，P2 剩 checkpoint，P3 待办 |
+| [ARCHITECTURE.md](./ARCHITECTURE.md) | 现状分析（as-is）：随代码演进更新，当前快照基于 M1（P0+P1）+ skills 能力 + AGENTS.md + P2-1 工具描述 ACI 化 + P2-2 任务模式 + P2-3 上下文预算落地后的实际代码 |
 
 ## 里程碑进度
 
@@ -30,11 +30,15 @@
   - `AgentState.activePlan` 持久化 + MEMORY.md 同步「当前任务计划」区块；主循环结束重载 state 防覆盖
   - `--self` 标志注入 [任务模式] 区块（先 plan 后执行、逐项勾选、未完成计划续跑提示）
   - 自测: `bun test` 新增 3 用例固化验收（update_plan 创建/勾选/记忆往返 / 参数校验 / 任务模式提示词），22 用例 / 126 expect 全绿
-- ⏳ **M2（P2）**：剩 `budget.ts` + tool result clearing（上下文预算）、checkpoint / `--resume` 续跑（activePlan 已是数据基础）
+- ✅ **P2-3 上下文预算（M2 第三项）已完成**：长任务不爆预算、不丢上下文（learn 上下文工程三件套之一）
+  - `src/budget.ts`：`estimateTokens`（中英混合离线估算，无需调 tokenizer API）/ `estimateMessagesTokens` / `compressContext`（最轻档 **tool result clearing**：最早的 tool 消息 content 摘要化，保留前缀 + 清理标记，消息结构不动、tool_call_id 关联保留、system 永不清理）
+  - `index.ts` 主循环每轮检查预算（`BUN_BOT_CONTEXT_BUDGET` 可配，默认 120000），超限压缩并把告警写回 `AgentState.contextWarnings`（[记忆] 区块 + MEMORY.md「上下文预算告警」区块可见）
+  - 自测: `bun test` 新增 6 用例固化验收（估算 / 不超限不动 / 先清最老 / 结构保留 / 多轮不无限循环 / 告警展示），**28 用例 / 155 expect 全绿**
+- ⏳ **M2（P2）**：剩 `--resume` checkpoint（会话级断点续跑，activePlan 已是数据基础）
 - ⏳ **M3（P3）**：回滚、测试闸门、沙箱加固、审计日志
 
 ## 与主 README 的关系
 
 主 [README.md](../README.md) 面向使用者（快速开始 / 工具集 / 配置项）；本目录面向**自我迭代**（计划 / 现状 / 进度），是 agent 启动时加载的"项目上下文"一部分。
 
-> 更新时间：2026-08 · 起点 = 模型支持 1M 上下文 · 最新修订 = ARCHITECTURE 快照对齐 M1 + skills + AGENTS.md + P2-1 + P2-2 后代码
+> 更新时间：2026-08 · 起点 = 模型支持 1M 上下文 · 最新修订 = ARCHITECTURE 快照对齐 M1 + skills + AGENTS.md + P2-1 + P2-2 + P2-3 后代码
