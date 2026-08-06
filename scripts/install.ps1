@@ -7,9 +7,9 @@
     # 或下载后本地执行:
     powershell -ExecutionPolicy Bypass -File scripts/install.ps1 [-Dir <目录>] [-Version <版本>] [-Repo <owner/repo>]
 
-  行为: 检测架构 → 下载 bun-bot-windows-<arch>.exe 与 .sha256 → SHA256 校验 → 安装
-  （重命名为 bun-bot.exe，命令统一不带平台后缀）到 %LOCALAPPDATA%\bun-bot\bin
-  （或 -Dir 指定）→ 加入用户 PATH（新终端生效）。
+  行为: 检测架构 → 下载 bun-bot-windows-<arch>.exe 与 .sha256（Invoke-WebRequest
+  显示下载进度条）→ SHA256 校验 → 安装（重命名为 bun-bot.exe，命令统一不带平台后缀）到
+  %LOCALAPPDATA%\bun-bot\bin（或 -Dir 指定）→ 加入用户 PATH（新终端生效）。
 #>
 param(
   [string]$Dir = "",
@@ -42,6 +42,9 @@ New-Item -ItemType Directory -Force -Path $Dir | Out-Null
 $dest = Join-Path $Dir $bin
 
 Write-Host "[install] 平台: $target | 版本: $Version | 安装目录: $Dir"
+# 下载显示进度条：Invoke-WebRequest 默认带进度；显式设置 ProgressPreference 防止会话级
+# $ProgressPreference='SilentlyContinue' 被继承（PowerShell 5.1 常见的 IWR 加速技巧）导致无进度
+$ProgressPreference = "Continue"
 Write-Host "[install] 下载 $url"
 Invoke-WebRequest -Uri $url -OutFile $dest
 
