@@ -8,8 +8,9 @@
  *   3. scripts/install.sh：--help 用法、自动检测当前平台、--target 覆盖、
  *      端到端安装（本地 mock release 服务器：下载 → SHA256 校验 → 安装 → 可执行位）、
  *      安装重命名为 bun-bot（Windows 为 bun-bot.exe，命令统一不带平台后缀）、
- *      指定版本走 /download/v<版本>/ 路径、windows 产物带 .exe、校验失败中止安装
- *   4. scripts/install.ps1：架构检测 + URL 拼接 + SHA256 校验 + 用户 PATH 添加
+ *      指定版本走 /download/v<版本>/ 路径、windows 产物带 .exe、校验失败中止安装、
+ *      下载进度展示（curl --progress-bar / wget --show-progress，进度走 stderr 不污染 stdout）
+ *   4. scripts/install.ps1：架构检测 + URL 拼接 + SHA256 校验 + 用户 PATH 添加 + 下载进度展示
  *
  * 端到端用 Bun.serve 起本地 HTTP 服务器 mock GitHub Releases（无需网络），
  * 通过 BUN_BOT_BASE_URL / BUN_BOT_TARGET 环境变量让安装脚本指向它。
@@ -144,6 +145,16 @@ test("install.sh --help 输出用法且退出 0", async () => {
   expect(r.stdout).toContain("BUN_BOT_REPO");
 });
 
+test("install.sh 下载命令带进度展示参数（curl --progress-bar / wget --show-progress）", () => {
+  const sh = readFileSync(join(ROOT, "scripts", "install.sh"), "utf8");
+  // curl 主路径：去掉 -s 静默、--progress-bar 强制显示（非 TTY/重定向也输出），进度走 stderr
+  expect(sh).toContain("--progress-bar");
+  // wget 兜底：--show-progress 替代 -q（wget >= 1.16）
+  expect(sh).toContain("--show-progress");
+  // 校验文件静默下载（2>/dev/null 吞掉进度条，避免噪音）
+  expect(sh).toContain('2>/dev/null');
+});
+
 test("install.sh 自动检测当前平台（无 --target 时）", async () => {
   const dir = join(tmp, "bin-auto");
   const r = await runInstall(["--dir", dir]);
@@ -165,6 +176,8 @@ test("install.sh 端到端：下载 → SHA256 校验 → 安装为 bun-bot（�
   expect(r.exitCode).toBe(0);
   expect(r.stdout).toContain("校验 SHA256");
   expect(r.stdout).toContain("已安装");
+  // 下载进度条走 stderr（curl --progress-bar 非 TTY 也输出，本地回环小文件同样有 100.0%）
+  expect(r.stderr).toContain("%");
   const installed = join(dir, "bun-bot");
   expect(existsSync(installed)).toBe(true);
   expect(readFileSync(installed, "utf8")).toBe(GOOD_CONTENT);
@@ -201,7 +214,7 @@ test("install.sh SHA256 校验失败 → 安装中止（退出非零，不落盘
 
 // ---------- 4. install.ps1 ----------
 
-test("install.ps1 存在：架构检测 + URL 拼接 + SHA256 校验 + 用户 PATH 添加", () => {
+test("install.ps1 存在：架构检测 + URL 拼接 + SHA256 校验 + 用户 PATH 添加 + 下载进度展示", () => {
   const ps = readFileSync(join(ROOT, "scripts", "install.ps1"), "utf8");
   expect(ps).toContain("PROCESSOR_ARCHITECTURE");
   expect(ps).toContain("latest/download");
@@ -210,4 +223,5 @@ test("install.ps1 存在：架构检测 + URL 拼接 + SHA256 校验 + 用户 PA
   expect(ps).toContain("SetEnvironmentVariable");
   expect(ps).toContain("bun-bot-$target.exe");  // Release 资产名（下载用）
   expect(ps).toContain('$bin  = "bun-bot.exe"'); // 安装命令名（统一不带平台后缀）
+  expect(ps).toContain('$ProgressPreference = "Continue"'); // 下载进度展示（防会话级 SilentlyContinue 继承）
 });
