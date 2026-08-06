@@ -60,13 +60,14 @@ test("入口 run 子命令：编译产物作为自带运行时执行外部脚本
     "await Bun.write('self-boot.txt', 'written by embedded runtime');",
     "console.log('self-boot:' + (20 + 22));",
     "console.log('file:' + (await Bun.file('self-boot.txt').text()));",
-    "console.log('argv2=' + process.argv[2]);",
+    // import() 在宿主进程内执行 → 脚本共享宿主 argv：[..., "run", <script>]（argv[2]=run、argv[3]=script）
+    "console.log('argv3=' + process.argv[3]);",
   ].join("\n"));
   const r = await runEntry(["run", script]);
   expect(r.exitCode).toBe(0);
   expect(r.stdout).toContain("self-boot:42");
   expect(r.stdout).toContain("file:written by embedded runtime");
-  expect(r.stdout).toContain("argv2=" + script);
+  expect(r.stdout).toContain("argv3=" + script);
   expect(r.stderr).toBe("");
 });
 
