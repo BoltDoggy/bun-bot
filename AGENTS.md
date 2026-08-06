@@ -6,12 +6,12 @@
 > 2026-08 修订：P2-2 任务模式（--self）+ P2-3 上下文预算 + P2-4 checkpoint（--resume）+ P3 质量与防护（git 安全阀补 run_bash / 测试闸门自动回滚 / 沙箱权限分级 / 审计日志）落地后，同步入口 / 可调变量 / 测试数字。
 > 2026-08 再修订：**P4 通用化落地** —— bun-bot 可在任意项目使用：身份/关键文件去专用化（context.ts）、.bunbot.json 项目配置 + ~/.bun-bot/ 全局配置（config.ts）、状态文件移入 .bunbot/（不污染 git）、多生态测试闸门（gate.ts）、CLI bin + init（bin/bun-bot.ts）、readonly/ask 白名单、大项目文件树忽略/截断、交互模式（--interactive）。本文件已同步入口 / 可调变量 / 测试数字。
 > 2026-08 三修订：**旧设计兼容清理** —— memory.ts 移除旧位置（项目根）状态文件兼容读取（loadState / loadCheckpoint 不再 fallback 工作区根）、根目录旧状态文件与 .gitignore 旧条目已删、docs/PLAN.md（P0-P4 全部完成的历史计划）归档删除。本文件已同步测试数字（76 用例 / 447 expect）与 docs 描述。
-> 2026-08 四修订：**P5 全平台分发落地** —— GitHub Actions 矩阵构建（.github/workflows/build.yml，6 平台：linux/darwin/windows × x64/arm64）+ 用户安装脚本（scripts/install.sh / install.ps1，下载 → SHA256 校验 → 安装）+ 本地/CI 共用构建脚本（scripts/build.sh，先测试后编译）。本文件已同步测试数字（85 用例 / 490 expect）、运行与构建、架构决策。
+> 2026-08 四修订：**P5 全平台分发落地** —— GitHub Actions 矩阵构建（.github/workflows/build.yml，6 平台：linux/darwin/windows × x64/arm64）+ 用户安装脚本（scripts/install.sh / install.ps1，下载 → SHA256 校验 → 安装）+ 本地/CI 共用构建脚本（scripts/build.sh，先测试后编译）。本文件已同步测试数字（86 用例 / 508 expect）、运行与构建、架构决策。
 
 ## 运行与构建
 
 - 必填环境变量：`DEEPSEEK_API_KEY`（写入 `.env`，已 gitignore；未设置时 fallback 全局配置 `~/.bun-bot/config.json` 的 `apiKey`）
-- 入口：`bun run index.ts [--stream] [--self] [--resume] [--interactive] "任务"`；`--stream` 走 SSE 流式输出，`--self` 开任务模式（先 plan 后执行、逐项勾选、中断可续跑），`--resume` 从上次断点恢复会话（可不带任务；带任务作为追加指令），`--interactive` 多轮 REPL（可不带任务）；全局 CLI：`bun-bot`（`bin/bun-bot.ts`，bun link 安装，含 `init` / `--version` / `--help`）
+- 入口：`bun run index.ts [--stream] [--self] [--resume] [--interactive] "任务"`；`--stream` 走 SSE 流式输出，`--self` 开任务模式（先 plan 后执行、逐项勾选、中断可续跑），`--resume` 从上次断点恢复会话（可不带任务；带任务作为追加指令），`--interactive` 多轮 REPL（可不带任务）；全局 CLI：`bun-bot`（bun link 安装 `bin/bun-bot.ts`，或安装编译产物；CLI 命令逻辑在 `src/cli.ts`，`index.ts` 编译产物入口在 API key 检查前同样拦截支持 `init` / `--version` / `--help`）
 - 构建与发布（P5）：本地构建 `bash scripts/build.sh [target]`（产物 `dist/bun-bot-<target>[.exe]` + `.sha256`）；GitHub Actions（`.github/workflows/build.yml`）打 tag `v*` 自动构建 6 平台并发布 Release，手动触发只出 artifact；用户安装 `curl -fsSL https://raw.githubusercontent.com/BoltDoggy/bun-bot/HEAD/scripts/install.sh | sh`（Windows 用 `install.ps1`）
 - 可调变量（优先级：环境变量 > .bunbot.json 项目配置 > ~/.bun-bot/config.json 全局配置 > 默认值）：
   - `BUN_BOT_MODEL` / `model`（默认 `deepseek-v4-flash`）
@@ -28,7 +28,7 @@
 
 ## 测试闸门（改完必须跑）
 
-- `bun test`：85 用例 / 490 expect，零外部依赖 —— 任何代码改动后必须全绿（P4 新增 10 个测试文件：p4-context / p4-config / p4-state-dir / p4-gate / p4-cli / p4-readonly / p4-global / p4-filetree / p4-interactive / p4-bootstrap；P5 新增 1 个：p5-release —— release 工作流 + 安装脚本端到端（本地 mock release 服务器，无需网络））
+- `bun test`：86 用例 / 508 expect，零外部依赖 —— 任何代码改动后必须全绿（P4 新增 10 个测试文件：p4-context / p4-config / p4-state-dir / p4-gate / p4-cli / p4-readonly / p4-global / p4-filetree / p4-interactive / p4-bootstrap；P5 新增 1 个：p5-release —— release 工作流 + 安装脚本端到端（本地 mock release 服务器，无需网络））
 - `bun run skills/web-search/self-test.ts --online`：web-search skill 在线实测（改了解析逻辑必须跑）
 - 新增能力必须补测试用例：`tests/` 是自我进化的验证闸门
 
@@ -50,7 +50,7 @@
 - **本文件优先**：与 README / docs 冲突时以本文件为准
 - **配置三级**：环境变量 > .bunbot.json > ~/.bun-bot/config.json（P4-3/8），`loadConfig(base)` 统一合并；API key 只做全局 fallback 不进项目配置
 - **通用化原则（P4）**：系统提示词不硬编码 bun-bot 自身文件结构（关键文件按存在性动态生成）；测试闸门多生态探测；状态文件不污染用户仓库
-- **编译产物自举（P4-11）**：`run_script` spawn 自身（`process.execPath`：源码时=bun、编译时=编译产物）；编译产物 `./bun-bot run <script>` 走 index.ts 顶部拦截（API key 检查前）用内嵌运行时执行外部脚本 —— 无 bun 环境的用户机器也能跑 run_script（`bun build --compile` 分发，体积约 60MB+，按平台编译）
+- **编译产物自举（P4-11）**：`run_script` spawn 自身（`process.execPath`：源码时=bun、编译时=编译产物）；编译产物 `./bun-bot run <script>` 及 `init` / `--version` / `--help` 走 index.ts 顶部拦截（API key 检查前）—— 前者用内嵌运行时执行外部脚本，后者提供完整 CLI —— 无 bun 环境的用户机器也能跑 run_script（`bun build --compile` 分发，体积约 60MB+，按平台编译）
 - **release 流程（P5）**：构建逻辑收敛在 `scripts/build.sh`（本地与 CI 共用：bun install → bun test → bun build --compile → 生成 `.sha256`）；`.github/workflows/build.yml` 原生矩阵 6 平台（`ubuntu-latest` linux-x64 / `ubuntu-24.04-arm` linux-arm64 / `macos-13` darwin-x64 / `macos-latest` darwin-arm64 / `windows-latest` windows-x64 / `windows-11-arm` windows-arm64 实验性），tag `v*` 触发发布 GitHub Release、手动触发只出 artifact；安装脚本 `scripts/install.sh`（POSIX sh）/ `install.ps1`（PowerShell）从 `github.com/<repo>/releases` 下载 `bun-bot-<target>[.exe]` + `.sha256`（latest 走 `/latest/download/`，指定版本走 `/download/v<版本>/`），**SHA256 校验失败必须中止安装**；安装脚本支持 `BUN_BOT_BASE_URL` 等环境变量覆盖（测试用本地 mock server 端到端验证，见 `tests/p5-release.test.ts`）
 
 ## 踩坑（非显然行为）

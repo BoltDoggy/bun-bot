@@ -6,8 +6,8 @@
 
 | 项 | 值 |
 | --- | --- |
-| index.ts | 318 行 / 15.6 KB（入口：CLI 解析（--stream / --self / --resume / --interactive）+ runAgentLoop 主循环 + 记忆读写钩子 + P2-3 预算检查 + P2-4 checkpoint + P3-2 测试闸门收尾 + P3-4 审计日志钩子 + P4-10 交互模式 REPL） |
-| src/ | tools.ts 547 行 / 26 KB · memory.ts 447 行 / 13.3 KB（含 checkpoint + P4-4/9）· context.ts 189 行 / 11.7 KB（P4-2）· config.ts 137 行 / 5.8 KB（P4-3/8）· gate.ts 190 行 / 8.4 KB（P4-5）· budget.ts 103 行 / 3.9 KB · git.ts 69 行 / 2.7 KB · audit.ts 76 行 / 2.6 KB（P4-4）· interactive.ts 55 行 / 2.3 KB（P4-10）· bin/bun-bot.ts 114 行（P4-6 CLI） |
+| index.ts | 339 行 / 15.9 KB（入口：CLI 命令拦截（init / --version / --help，API key 检查前）+ CLI 解析（--stream / --self / --resume / --interactive）+ runAgentLoop 主循环 + 记忆读写钩子 + P2-3 预算检查 + P2-4 checkpoint + P3-2 测试闸门收尾 + P3-4 审计日志钩子 + P4-10 交互模式 REPL） |
+| src/ | tools.ts 547 行 / 26 KB · memory.ts 447 行 / 13.3 KB（含 checkpoint + P4-4/9）· context.ts 189 行 / 11.7 KB（P4-2）· config.ts 137 行 / 5.8 KB（P4-3/8）· gate.ts 190 行 / 8.4 KB（P4-5）· budget.ts 103 行 / 3.9 KB · git.ts 69 行 / 2.7 KB · audit.ts 76 行 / 2.6 KB（P4-4）· interactive.ts 55 行 / 2.3 KB（P4-10）· cli.ts 80 行 / 4.1 KB（P4-6 CLI：init / --version / --help）· bin/bun-bot.ts 33 行 / 1.3 KB（复用 cli.ts，bun link 分发） |
 | release（P5） | `.github/workflows/build.yml`（81 行：矩阵 6 平台 + tag 发布 + 手动 artifact）· scripts/build.sh（59 行：本地/CI 共用构建）· scripts/install.sh（145 行：POSIX 安装脚本）· scripts/install.ps1（73 行：Windows 安装脚本） |
 | 工具数量 | 6 个：`run_script` / `read_file` / `write_file` / `list_dir` / `run_bash` / `update_plan`（skills 不加新工具） |
 | 工具描述 ACI 化 | ✅ P2-1 已完成：6 个工具 `description` 均带「示例：」JSON 参数形态的 example usage，参数语义同步打磨；系统提示词 [能力] 区块带极简 few-shot（双保险） |
@@ -27,14 +27,14 @@
 | 测试闸门 | ✅ P3-2 已完成：`src/gate.ts`（`runTestGate` / `revertToHead` / `enforceTestGate`）；主循环收尾若本会话发生过自修改（write_file / 写操作 run_bash 的 `gitSnapshot`）自动跑 `bun test`，失败自动回滚到**会话开始前 HEAD**（`git reset --hard` + `git clean -fd`，gitignore 本地状态不丢）并复测确认项目可继续跑 |
 | 沙箱权限分级 | ✅ P3-3 已完成：路径（cwd / path）默认限制工作区内（`BUN_BOT_ALLOW_OUTSIDE_CWD=1` 放行）；`run_bash` 危险命令黑名单（rm -rf /、git push、fork bomb、sudo、设备写入等）直接拒绝；`BUN_BOT_PERMISSIONS=ask` 时写操作命令需确认 |
 | 审计日志 | ✅ P3-4 已完成：`src/audit.ts` —— 每次工具调用入参/出参摘要落盘 `AUDIT.log.jsonl`（gitignore），`appendAudit` 内部防御性截断（400 / 500），`loadAudit` 最新在前 |
-| 编译产物自举 | ✅ 已落地：`run_script` spawn 自身（`process.execPath`：源码时=bun、编译时=编译产物）；入口 `run <script>` 子命令（index.ts 拦截于 API key 检查前）用内嵌运行时执行外部脚本 —— `bun build --compile` 后无 bun 环境也能跑（端到端实测：PATH 仅 /usr/bin:/bin 下 `./bun-bot-demo run <script>` exitCode 0，Bun API / 相对 import / 顶层 await 全可用） |
+| 编译产物自举 | ✅ 已落地：`run_script` spawn 自身（`process.execPath`：源码时=bun、编译时=编译产物）；入口 `run <script>` 子命令（index.ts 拦截于 API key 检查前）用内嵌运行时执行外部脚本，且 `init` / `--version` / `--help` 同样走 API key 检查前拦截（编译产物 = 完整 CLI） —— `bun build --compile` 后无 bun 环境也能跑（端到端实测：PATH 仅 /usr/bin:/bin 下 `./bun-bot-demo run <script>` exitCode 0，Bun API / 相对 import / 顶层 await 全可用） |
 | 全平台分发 | ✅ P5 已完成：`.github/workflows/build.yml` 原生矩阵构建 6 平台（ubuntu-latest → linux-x64 / ubuntu-24.04-arm → linux-arm64 / macos-13 → darwin-x64 / macos-latest → darwin-arm64 / windows-latest → windows-x64 / windows-11-arm → windows-arm64 实验性），tag `v*` 自动发布 Release（每个产物附 `.sha256`）、手动触发只出 artifact；`scripts/install.sh`（macOS/Linux）+ `scripts/install.ps1`（Windows）一行安装：检测平台 → 下载 → SHA256 校验 → 安装 → PATH；`scripts/build.sh` 本地与 CI 共用（bun install → bun test → bun build --compile → .sha256） |
-| 自测 | 85 用例 / 490 expect，零外部依赖（`bun test`）；web-search 另有 `self-test.ts --online` 在线实测 |
+| 自测 | 86 用例 / 508 expect，零外部依赖（`bun test`）；web-search 另有 `self-test.ts --online` 在线实测 |
 
 ## 模块解剖
 
 ```text
-index.ts              入口：run 子命令自举（编译产物自带运行时）+ CLI 解析（--stream / --self / --resume / --interactive）+ runAgentLoop 主循环 + 记忆读写钩子 + 预算检查 + checkpoint + 测试闸门收尾 + 交互模式 REPL
+index.ts              入口：run 子命令自举（编译产物自带运行时）+ CLI 命令拦截（init / --version / --help，API key 检查前）+ CLI 解析（--stream / --self / --resume / --interactive）+ runAgentLoop 主循环 + 记忆读写钩子 + 预算检查 + checkpoint + 测试闸门收尾 + 交互模式 REPL
 .github/workflows/     P5 发布工作流：build.yml —— 矩阵 6 平台（tag v* 触发 Release + workflow_dispatch 手动 artifact）
 scripts/build.sh       P5 构建脚本（本地/CI 共用）：bun install → bun test → bun build --compile → SHA256 校验文件
 scripts/install.sh     P5 安装脚本（POSIX sh）：检测平台 → 下载（latest/指定版本）→ SHA256 校验（失败中止）→ install -m 0755 → PATH 提示
@@ -48,9 +48,9 @@ src/git.ts            git 安全快照：write_file + run_bash 写操作前（ha
 src/gate.ts            测试闸门（P3-2 + P4-5）：detectTestCommand 多生态探测 / runTestGate / revertToHead / enforceTestGate
 src/interactive.ts     交互模式（P4-10）：driveInteractive / isExitInput —— 多轮 REPL 消息跨轮保持，runRound 可注入离线测试
 src/audit.ts           审计日志（P3-4）：appendAudit / loadAudit —— 落盘 .bunbot/AUDIT.log.jsonl
-bin/bun-bot.ts         CLI 分发（P4-6）：init / --version / --help / 透传 index.ts（bun link 全局安装）
+bin/bun-bot.ts         CLI 分发（P4-6）：复用 src/cli.ts 的 init / --version / --help / 透传 index.ts（bun link 全局安装；编译产物入口 index.ts 同样支持）
 skills/               组合操作库：skills/<name>/SKILL.md + 实现 + 离线样本 + 自测
-tests/                self-test 用例 85 / 490 expect（tools + memory + checkpoint + skills + AGENTS.md + P2/P3/P4 各闸门 + P5 release，零外部依赖）
+tests/                self-test 用例 86 / 508 expect（tools + memory + checkpoint + skills + AGENTS.md + P2/P3/P4 各闸门 + P5 release，零外部依赖）
 ```
 
 ## 工具集（6 个，description 均带 example usage）

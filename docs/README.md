@@ -51,7 +51,7 @@
   - P4-② 项目级配置 `.bunbot.json`（新增 src/config.ts）：环境变量 > 项目配置 > 全局配置 > 默认值，支持 model/budget/permissions/testCommand/identity/stateDir/ignore/allowCommands → `tests/p4-config.test.ts`（5 用例）
   - P4-③ 状态文件不污染目标仓库：AGENT_STATE/MEMORY/CHECKPOINT/AUDIT 移入 `.bunbot/`（saveState 自动 ensureStateDir + .gitignore 幂等追加）→ `tests/p4-state-dir.test.ts`（3 用例）
   - P4-④ 通用测试闸门（gate.ts）：`detectTestCommand` 多生态探测（package.json→bun test、pyproject→pytest、Cargo→cargo test、go.mod→go test、tests/ 兜底）+ testCommand 配置优先 → `tests/p4-gate.test.ts`（5 用例）
-  - P4-⑤ CLI 分发与 init：`bin/bun-bot.ts`（bun link 全局安装；init 生成 AGENTS.md 模板 + .bunbot.json + .gitignore 条目；--version / --help）→ `tests/p4-cli.test.ts`（5 用例）
+  - P4-⑤ CLI 分发与 init：`src/cli.ts`（init / --version / --help 逻辑）+ `bin/bun-bot.ts`（bun link 全局安装）+ `index.ts`（编译产物入口 API key 检查前拦截，同样支持）→ `tests/p4-cli.test.ts`（6 用例）
   - P4-⑥ 只读模式与权限细化：`BUN_BOT_PERMISSIONS=readonly`（write_file / 写操作 run_bash / update_plan 拒绝）+ ask 白名单 `allowCommands` → `tests/p4-readonly.test.ts`（5 用例）
   - P4-⑦ 全局配置 `~/.bun-bot/config.json`：默认模型/权限/API key fallback（DEEPSEEK_API_KEY 未设置时用全局）；多项目状态天然按 `.bunbot/` 隔离 → `tests/p4-global.test.ts`（4 用例）
   - P4-⑧ 大项目上下文加载：buildFileTree 感知 .gitignore + 扩展忽略（vendor/target/__pycache__/.venv 等）+ 行数预算截断（超限提示 list_dir）→ `tests/p4-filetree.test.ts`（4 用例）
@@ -61,7 +61,7 @@
   - P5-① GitHub Actions 矩阵构建：`.github/workflows/build.yml` —— 6 平台（ubuntu-latest → linux-x64 / ubuntu-24.04-arm → linux-arm64 / macos-13 → darwin-x64 / macos-latest → darwin-arm64 / windows-latest → windows-x64 / windows-11-arm → windows-arm64 实验性），tag `v*` 触发发布 GitHub Release（每个产物附 `.sha256`）、workflow_dispatch 手动触发只出 artifact；构建逻辑收敛在 `scripts/build.sh`（bun install → **bun test 先绿** → `bun build --compile` → 生成 SHA256）
   - P5-② 用户安装脚本：`scripts/install.sh`（POSIX sh，macOS/Linux：检测平台 → 下载（latest 或指定版本）→ SHA256 校验（失败中止）→ 装到 ~/.local/bin → PATH 提示）+ `scripts/install.ps1`（Windows：下载 .exe → Get-FileHash 校验 → 装到 %LOCALAPPDATA%\bun-bot\bin → 加用户 PATH）；支持 `BUN_BOT_REPO` / `BUN_BOT_VERSION` / `BUN_BOT_BASE_URL` 等环境变量覆盖
   - P5-③ 端到端验证：`tests/p5-release.test.ts`（9 用例 / 44 expect）—— workflow 矩阵与触发断言 + install.sh 用本地 `Bun.serve` mock release 服务器跑真实下载 → 校验 → 安装（可执行位用 `statSync().mode & 0o111`）+ 校验失败中止 + windows .exe 命名 + install.ps1 关键逻辑断言
-  - 自测: `bun test` **85 用例 / 490 expect 全绿**；`bash scripts/build.sh` 实测产出 `dist/bun-bot-darwin-arm64`（61MB）+ `.sha256`，`shasum -c` 通过，产物 `run` 子命令自举正常（embedded-runtime-ok 1.3.14）
+  - 自测: `bun test` **86 用例 / 508 expect 全绿**；`bash scripts/build.sh` 实测产出 `dist/bun-bot-darwin-arm64`（61MB）+ `.sha256`，`shasum -c` 通过，产物 `run` 子命令自举正常（embedded-runtime-ok 1.3.14）
 
 ## 与主 README 的关系
 
