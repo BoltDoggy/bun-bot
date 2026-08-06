@@ -1,6 +1,6 @@
 {
   "name": "bun-bot",
-  "version": "0.3.3",
+  "version": "0.4.0",
   "description": "自我认知为 Bun.js 运行时的 agent：DeepSeek Function Calling + Bun 执行，自修改 + 跨会话记忆 + 测试闸门 + 通用化（可在任意项目使用）",
   "type": "module",
   "bin": {
