@@ -2,7 +2,7 @@
 
 > 理论地基：`learn/`（结构化笔记 `learn/README.md` + 5 篇权威一手原文 `learn/raw/`）——提示词工程 × 上下文工程 × Harness 工程。
 > 本计划的差距分析、优先级与验收口径均来自那里的学习成果；计划修订时先回 `learn/` 校准。
-> 更新时间：2026-08 · 对齐 M1 + skills + learn + AGENTS.md + P2-1 + P2-2 + P2-3 + P2-4 后的现状（**P2 全部完成**）。
+> 更新时间：2026-08 · 对齐 M1 + skills + learn + AGENTS.md + P2-1 ~ P2-4 + P3 后的现状（**P2 全部完成 + P3 质量与防护落地**）。
 
 ## 0. 为什么现在迭代
 
@@ -31,8 +31,8 @@ learn/ 校准后的**新差距（差距即路线图，详见 `learn/README.md` �
 | 工具描述无 example usage（工具设计五原则之五：prompt-engineering 工具描述） | **P2 第 1 项**（成本最低、收益最直接）✅ 已完成 |
 | 无 token 预算 / 无 compaction（context rot：token 越多回忆越差） | **P2 budget.ts + tool result clearing**（从最轻档压缩做起）✅ 已完成 |
 | 无 `--resume` / checkpoint（Claude Code 实践清单） | **P2 checkpoint**（会话级消息历史持久化）✅ 已完成 |
-| 无测试闸门自动 revert（verify its work） | **P3 测试闸门** |
-| 无权限分级 / hooks（Claude Code 清单） | **P3 沙箱扩展** |
+| 无测试闸门自动 revert（verify its work） | **P3 测试闸门** ✅ 已完成（2026-08） |
+| 无权限分级 / hooks（Claude Code 清单） | **P3 沙箱扩展** ✅ 已完成（2026-08） |
 
 **一句话：让 bun-bot 从"会算数的脚本执行器"迭代成"能读懂自己、修改自己、记住自己"的长期 agent。**
 
@@ -53,13 +53,15 @@ src/tools.ts          工具定义与执行器（注册表模式，方便自增�
 src/context.ts        系统提示词组装：身份 + 项目 + 记忆 + 规则 + skills 索引
 src/memory.ts         记忆读写：AGENT_STATE.json / MEMORY.md / AGENT_CHECKPOINT.json（--resume）
 src/budget.ts         上下文 token 预算与超限压缩（P2-3：tool result clearing）✅ 已建
-src/git.ts            自修改前的安全提交与回滚
+src/gate.ts           测试闸门（P3-2：收尾自动跑测试、失败自动回滚到会话前 HEAD）✅ 已建
+src/audit.ts          审计日志（P3-4：工具调用入参/出参摘要落盘 AUDIT.log.jsonl）✅ 已建
+src/git.ts            git 安全快照（write_file + run_bash 写操作前）与 HEAD 查询 ✅ 已建
 skills/               组合操作库：skills/<name>/SKILL.md + 实现 + 样本 + 自测
 tests/                self-test 用例（agent 修改自身代码后的验证闸门）
 learn/                理论地基：5 篇权威一手材料 + 结构化笔记（只读，按需 read_file，不预载）
 ```
 
-> 当前已落地：index.ts / tools.ts / context.ts / memory.ts / budget.ts / git.ts / skills/ / tests/ / learn/（见 [ARCHITECTURE.md](./ARCHITECTURE.md) 快照）。
+> 当前已落地：index.ts / tools.ts / context.ts / memory.ts / budget.ts / gate.ts / audit.ts / git.ts / skills/ / tests/ / learn/（见 [ARCHITECTURE.md](./ARCHITECTURE.md) 快照）。
 > 架构的理论依据：`learn/raw/anthropic-effective-context-engineering.md`（上下文工程，budget.ts 的来由）+ `anthropic-writing-tools-for-agents.md`（工具五原则，ACI 化的来由）+ `anthropic-claude-code-best-practices.md`（checkpoint/resume，P2-4 的来由）。
 
 ## 3. 分阶段计划
@@ -117,16 +119,16 @@ learn/                理论地基：5 篇权威一手材料 + 结构化笔记�
 
 **验收**：`bun run index.ts --self "给我加一个 read_file 工具并补文档"` 全流程无人干预完成；模拟 100 轮长任务不丢上下文、不爆预算；`bun run index.ts --resume`（中断后）从上次断点恢复消息历史继续，任务完成自动清除 checkpoint。✅（P2-1 ~ P2-4 各自验收已勾选）
 
-### P3 · 质量与防护 ⏳（M3 进行中）
+### P3 · 质量与防护 ✅（M3 已完成）
 
-**目标**：让自修改可信、可回滚、不跑飞。
+**目标**：让自修改可信、可回滚、不跑飞。对齐 learn 的 verify its work（测试闸门）+ Claude Code 实践清单（permissions / audit）。
 
-- [ ] git 安全阀：任何 `write_file` / `run_bash` 触及工作区前，`git add -A && git commit` 打快照（注：`write_file` 已自动打快照，`run_bash` 尚未）
-- [ ] 测试闸门：每次自修改后强制跑 `tests/`，失败自动 `git revert`（= learn 的 verify its work：给 agent 能跑出 pass/fail 的验证信号）
-- [ ] 沙箱：脚本默认限制 `cwd`，可选资源上限（内存/进程数）；**权限分级**（Claude Code permissions 模式：全自动区 + 需确认区，不每步都问）
-- [ ] 审计日志：每次工具调用的入参/出参摘要落盘
+- [x] **git 安全阀补 run_bash**：`write_file` 落盘前自动快照（M1 已有）；P3-1 起 `run_bash` 执行"写操作"命令（sed -i / git commit / bun install / touch 等）前，若工作区有未提交改动先 `git add -A && git commit` 固化（`src/git.ts` 新增 `hasUncommittedChanges` / `snapshotIfDirty` / `currentHead`）—— shell 直接改文件也可回滚；只读命令（git status / git diff）不产生噪音提交 ✅（2026-08 完成）
+- [x] **测试闸门**：新建 `src/gate.ts` —— `runTestGate`（工作区跑 `bun test`，pass/fail + 输出）/ `revertToHead`（`git reset --hard <head>` + `git clean -fd`，gitignore 的本地状态不丢）/ `enforceTestGate`（失败自动回滚到**会话开始前 HEAD** + 复测确认项目可继续跑）；`index.ts` 收尾时若本会话发生过自修改（write_file / 写操作 run_bash 的 `gitSnapshot`）自动触发，失败自动回滚 ✅（2026-08 完成：= learn 的 verify its work，给 agent 能跑出 pass/fail 的验证信号）
+- [x] **沙箱权限分级**：路径（cwd / path）默认限制在工作区内（越界拒绝，`BUN_BOT_ALLOW_OUTSIDE_CWD=1` 可放行）；`run_bash` 危险命令黑名单（`rm -rf /`、`git push`、fork bomb、sudo、设备写入等）直接拒绝；`BUN_BOT_PERMISSIONS=ask` 时写操作命令需人工确认（无人值守返回提示）✅（2026-08 完成：Claude Code permissions 模式简化落地 —— 全自动区（默认）+ 需确认区）
+- [x] **审计日志**：新建 `src/audit.ts` —— 每次工具调用入参/出参摘要落盘 `AUDIT.log.jsonl`（gitignore），`appendAudit` 内部防御性截断（400 / 500 字符），`loadAudit` 读回（最新在前）✅（2026-08 完成）
 
-**验收**：故意让 `--self` 写一个坏补丁，能自动回滚且项目可继续跑。
+**验收**：✅ `tests/tools.test.ts` 新增 5 用例 —— 模拟"故意写坏补丁（语法错误测试文件）→ `enforceTestGate` 自动回滚到会话前 HEAD + 复测通过 + 坏文件被 clean 删除"，`bun test` 35 用例 / 225 expect 全绿，`bun build index.ts` 编译通过。
 
 ## 4. 系统提示词结构（预算 <5%）
 
@@ -177,7 +179,7 @@ learn/                理论地基：5 篇权威一手材料 + 结构化笔记�
 
 ## 6. 成功指标
 
-1. `bun run index.ts --self` 能安全修改自身代码、跑测试、通过或自动回滚。⏳（P3 完成）
+1. `bun run index.ts --self` 能安全修改自身代码、跑测试、通过或自动回滚。✅（P3 完成，2026-08：测试闸门收尾自动跑 bun test，失败自动回滚到会话开始前）
 2. 一次会话完成"新增工具 + 文档 + 测试 + 收尾"全流程，无需人工干预。✅（M1 已达成）
 3. 重启后能引用上次会话的决策（记忆持久化生效）。✅
 4. 超过 100 轮工具调用的长任务不丢上下文、不爆预算、中断可续跑。✅（P2-3 budget.ts + tool result clearing + P2-4 --resume checkpoint，2026-08）
@@ -190,7 +192,7 @@ learn/                理论地基：5 篇权威一手材料 + 结构化笔记�
 | 风险 | 对策 |
 | --- | --- |
 | 1M 也会被填满 + context rot（token 越多模型回忆越差） | `budget.ts` 摘要压缩 ✅ + **tool result clearing** ✅ + `--resume` checkpoint 分段续跑 ✅ |
-| 自修改破坏源码 | git 快照 + 测试闸门 + 自动 revert |
+| 自修改破坏源码 | git 快照 ✅ + 测试闸门 ✅ + 自动 revert ✅（P3-1/3-2 落地） |
 | 全量塞文件反而稀释注意力 | 按需 `read_file` + 渐进披露，不全量灌入提示词（skills 索引同理：提示词只放一层索引） |
 | 工具权限过大 | 沙箱 `cwd` 限制 + 资源上限 + 权限分级 + 审计日志 |
 | 固化的知识会过时（HTML 结构变了） | skill 带版本号 + 自测命令（离线样本兜底 + `--online` 实测），纳入测试闸门 |
@@ -203,7 +205,7 @@ learn/                理论地基：5 篇权威一手材料 + 结构化笔记�
 - ✅ **skills**：组合操作库落地，web-search v2 固化跨会话能力（2026-08 完成）。
 - ✅ **AGENTS.md 项目指令**：项目级契约落地 —— 存在时加载进 [项目] 最前（优先级高于 README/docs），[规则] 第 5 条声明约束力；缺失时静默跳过（2026-08 完成）。
 - ✅ **M2**（P2）：`--self` 自主迭代 + budget.ts / tool result clearing / checkpoint —— **P2-1 工具描述 ACI 化 ✅ + P2-2 任务模式 ✅ + P2-3 上下文预算 ✅ + P2-4 --resume checkpoint ✅ 全部完成**（2026-08）。
-- ⏳ **M3**（P3）：加固、回滚、测试闸门，形成可信的自修改循环，可长期自动演进。
+- ✅ **M3**（P3）：加固、回滚、测试闸门 —— git 安全阀补 run_bash + 测试闸门自动 revert + 沙箱权限分级 + 审计日志全部落地（2026-08 完成），形成可信的自修改循环，可长期自动演进。
 
 ---
 

@@ -2,8 +2,8 @@
 
 | 文档 | 说明 |
 | --- | --- |
-| [PLAN.md](./PLAN.md) | **主计划**：拥抱 1M 上下文，把 bun-bot 从"脚本执行器"迭代成"能读懂自己、修改自己、记住自己"的长期 agent。P0/P1/skills/AGENTS.md/P2-1/P2-2/P2-3/P2-4 已完成并勾选，**P2 全部收官**，P3 待办 |
-| [ARCHITECTURE.md](./ARCHITECTURE.md) | 现状分析（as-is）：随代码演进更新，当前快照基于 M1（P0+P1）+ skills 能力 + AGENTS.md + P2-1 工具描述 ACI 化 + P2-2 任务模式 + P2-3 上下文预算 + P2-4 --resume checkpoint 全部落地后的实际代码 |
+| [PLAN.md](./PLAN.md) | **主计划**：拥抱 1M 上下文，把 bun-bot 从"脚本执行器"迭代成"能读懂自己、修改自己、记住自己"的长期 agent。P0/P1/skills/AGENTS.md/P2-1 ~ P2-4/P3 已完成并勾选，**P2 + P3 全部收官** |
+| [ARCHITECTURE.md](./ARCHITECTURE.md) | 现状分析（as-is）：随代码演进更新，当前快照基于 M1（P0+P1）+ skills 能力 + AGENTS.md + P2-1 ~ P2-4 + P3 质量与防护（git 安全阀补 run_bash / 测试闸门自动回滚 / 沙箱权限分级 / 审计日志）全部落地后的实际代码 |
 
 ## 里程碑进度
 
@@ -40,10 +40,15 @@
   - 与任务模式互补：`activePlan` 管任务级目标锚点，checkpoint 管会话级完整上下文
   - 自测: `bun test` 新增 2 用例固化验收（save/load/clear 往返 / buildResumeMessages），**30 用例 / 174 expect 全绿**
 - ✅ **M2（P2）已完成**：P2-1 ACI 化 + P2-2 任务模式 + P2-3 上下文预算 + P2-4 --resume checkpoint 全部收官，长任务「不爆预算、不丢上下文、中断可续跑」闭环成立
-- ⏳ **M3（P3）待办**：git 安全阀补 run_bash、测试闸门自动 revert、沙箱权限分级、审计日志
+- ✅ **M3（P3）已完成**：自修改可信、可回滚、不跑飞
+  - P3-1 git 安全阀补 `run_bash`：`src/git.ts` 新增 `hasUncommittedChanges` / `snapshotIfDirty` / `currentHead`，写操作命令前自动快照（只读命令不产生噪音提交）
+  - P3-2 测试闸门：`src/gate.ts`（`runTestGate` / `revertToHead` / `enforceTestGate`），主循环收尾 didModify 时自动跑 bun test，失败自动回滚到会话前 HEAD + 复测（verify its work）
+  - P3-3 沙箱权限分级：路径限制工作区内（`BUN_BOT_ALLOW_OUTSIDE_CWD=1` 放行）、危险命令黑名单（rm -rf /、git push、fork bomb 等）、`BUN_BOT_PERMISSIONS=ask` 写操作需确认
+  - P3-4 审计日志：`src/audit.ts` 每次工具调用入参/出参摘要落盘 `AUDIT.log.jsonl`（gitignore）
+  - 自测: `bun test` 新增 5 用例固化验收（run_bash 快照 / 路径限制 / 危险命令 / 审计往返 / 测试闸门回滚模拟），**35 用例 / 225 expect 全绿**；`bun build index.ts` 编译通过
 
 ## 与主 README 的关系
 
 主 [README.md](../README.md) 面向使用者（快速开始 / 工具集 / 配置项）；本目录面向**自我迭代**（计划 / 现状 / 进度），是 agent 启动时加载的"项目上下文"一部分。
 
-> 更新时间：2026-08 · 起点 = 模型支持 1M 上下文 · 最新修订 = ARCHITECTURE 快照对齐 M1 + skills + AGENTS.md + P2-1 + P2-2 + P2-3 + P2-4 后代码（P2 全部完成）
+> 更新时间：2026-08 · 起点 = 模型支持 1M 上下文 · 最新修订 = ARCHITECTURE 快照对齐 M1 + skills + AGENTS.md + P2-1 ~ P2-4 + P3 后代码（P2 + P3 全部完成）

@@ -1,13 +1,13 @@
 # 现状分析（as-is）
 
-基于对 index.ts / src/ / skills/ / tests/ 的实际阅读与统计，更新于 **M1（P0+P1）+ skills 能力 + AGENTS.md 项目指令 + P2-1 工具描述 ACI 化 + P2-2 任务模式 + P2-3 上下文预算 + P2-4 --resume checkpoint 全部落地之后**。
+基于对 index.ts / src/ / skills/ / tests/ 的实际阅读与统计，更新于 **M1（P0+P1）+ skills 能力 + AGENTS.md 项目指令 + P2-1 ~ P2-4 + P3 质量与防护（git 安全阀补 run_bash / 测试闸门自动回滚 / 沙箱权限分级 / 审计日志）全部落地之后**。
 
 ## 快照数据
 
 | 项 | 值 |
 | --- | --- |
-| index.ts | 216 行 / 9.7 KB（入口：CLI 解析（--stream / --self / --resume）+ agent 主循环 + 记忆读写钩子 + P2-3 预算检查 + P2-4 checkpoint 保存/恢复/清理） |
-| src/ | tools.ts 438 行 / 18.9 KB · memory.ts 339 行 / 12.8 KB（含 checkpoint 模块）· context.ts 158 行 / 9.2 KB · budget.ts 103 行 / 3.9 KB · git.ts 41 行 / 1.5 KB |
+| index.ts | 237 行 / 11.8 KB（入口：CLI 解析（--stream / --self / --resume）+ agent 主循环 + 记忆读写钩子 + P2-3 预算检查 + P2-4 checkpoint 保存/恢复/清理 + P3-2 测试闸门收尾 + P3-4 审计日志钩子） |
+| src/ | tools.ts 464 行 / 23.9 KB · memory.ts 339 行 / 12.8 KB（含 checkpoint 模块）· context.ts 163 行 / 10.4 KB · budget.ts 103 行 / 3.9 KB · git.ts 68 行 / 2.7 KB（含 P3-1 安全阀）· gate.ts 126 行 / 5.4 KB（P3-2 测试闸门）· audit.ts 60 行 / 2.4 KB（P3-4 审计日志） |
 | 工具数量 | 6 个：`run_script` / `read_file` / `write_file` / `list_dir` / `run_bash` / `update_plan`（skills 不加新工具） |
 | 工具描述 ACI 化 | ✅ P2-1 已完成：6 个工具 `description` 均带「示例：」JSON 参数形态的 example usage，参数语义同步打磨；系统提示词 [能力] 区块带极简 few-shot（双保险） |
 | 任务模式 | ✅ P2-2 已完成：`--self` 注入 [任务模式] 区块（先 plan 后执行、逐项勾选、未完成计划续跑提示）；`update_plan` 工具全量覆盖式创建/勾选计划；`AgentState.activePlan` 持久化 + MEMORY.md「当前任务计划」区块；主循环结束重载 state 防覆盖 |
@@ -22,8 +22,11 @@
 | 工具输出上限 | 65536 字符（4K → 64KB），截断处带偏移信息可续读 |
 | read_file 硬上限 | 1MB（`MAX_READ_BYTES`） |
 | 记忆 | `AGENT_STATE.json` / `MEMORY.md` 本地跨会话持久化（gitignore，不纳入版本控制，避免每次会话的写回噪音）；含 `activePlan` 当前任务计划 + `contextWarnings` 预算告警；`AGENT_CHECKPOINT.json` 会话级消息历史（gitignore，任务完成即清除） |
-| 自修改安全 | `write_file` 落盘前自动 git 快照 + 返回行级 diff 摘要 |
-| 自测 | 30 用例 / 174 expect，零外部依赖（`bun test`）；web-search 另有 `self-test.ts --online` 在线实测 |
+| 自修改安全 | `write_file` 落盘前自动 git 快照 + 返回行级 diff 摘要；P3-1：`run_bash` 写操作命令前若工作区有未提交改动也自动快照（`snapshotIfDirty`） |
+| 测试闸门 | ✅ P3-2 已完成：`src/gate.ts`（`runTestGate` / `revertToHead` / `enforceTestGate`）；主循环收尾若本会话发生过自修改（write_file / 写操作 run_bash 的 `gitSnapshot`）自动跑 `bun test`，失败自动回滚到**会话开始前 HEAD**（`git reset --hard` + `git clean -fd`，gitignore 本地状态不丢）并复测确认项目可继续跑 |
+| 沙箱权限分级 | ✅ P3-3 已完成：路径（cwd / path）默认限制工作区内（`BUN_BOT_ALLOW_OUTSIDE_CWD=1` 放行）；`run_bash` 危险命令黑名单（rm -rf /、git push、fork bomb、sudo、设备写入等）直接拒绝；`BUN_BOT_PERMISSIONS=ask` 时写操作命令需确认 |
+| 审计日志 | ✅ P3-4 已完成：`src/audit.ts` —— 每次工具调用入参/出参摘要落盘 `AUDIT.log.jsonl`（gitignore），`appendAudit` 内部防御性截断（400 / 500），`loadAudit` 最新在前 |
+| 自测 | 35 用例 / 225 expect，零外部依赖（`bun test`）；web-search 另有 `self-test.ts --online` 在线实测 |
 
 ## 模块解剖
 
@@ -33,7 +36,9 @@ src/tools.ts          工具注册表：6 个工具的定义与执行器（新�
 src/context.ts        系统提示词组装：[身份] [能力] [项目] [记忆] [任务模式] [规则] + skills 索引 + AGENTS.md 约束声明 + contextWarnings 展示
 src/memory.ts         记忆读写：AGENT_STATE.json / MEMORY.md（含 activePlan + contextWarnings）+ AGENT_CHECKPOINT.json（checkpoint 模块）+ AGENTS.md 项目指令 + 项目上下文加载
 src/budget.ts         上下文预算：token 估算 + 最轻档压缩器（tool result clearing：最早的 tool 结果摘要化，消息结构不动）
-src/git.ts            自修改前的 git 快照（M1 简化版，完整安全阀属 P3）
+src/git.ts            git 安全快照：write_file + run_bash 写操作前（hasUncommittedChanges / snapshotIfDirty / currentHead）
+src/gate.ts            测试闸门（P3-2）：runTestGate / revertToHead / enforceTestGate —— 收尾自动跑测试、失败自动回滚
+src/audit.ts           审计日志（P3-4）：appendAudit / loadAudit —— 工具调用入参/出参摘要落盘 AUDIT.log.jsonl
 skills/               组合操作库：skills/<name>/SKILL.md + 实现 + 离线样本 + 自测
 tests/tools.test.ts   self-test 用例（agent 修改自身代码后的验证闸门）
 ```
@@ -46,7 +51,7 @@ tests/tools.test.ts   self-test 用例（agent 修改自身代码后的验证闸
 | `read_file` | 读工作区文件，默认完整返回 64KB，可 offset 续读（单次硬上限 1MB） | `{"path":"src/tools.ts","offset":65536}` |
 | `write_file` | 写工作区文件，自动 git 快照 + 返回行级 diff 摘要（改自己代码就靠它） | `{"path":"src/hello.ts","content":"..."}` |
 | `list_dir` | 列目录（`-a` 显示隐藏文件、`depth` 限制递归深度） | `{"path":".","all":true,"depth":2}` |
-| `run_bash` | shell 命令，cwd 默认工作区，可跑 git / bun test 等 | `{"command":"bun test"}` |
+| `run_bash` | shell 命令，cwd 默认工作区，可跑 git / bun test 等；P3-1 写操作命令前自动 git 快照；P3-3 危险命令被权限系统拒绝 | `{"command":"bun test"}` |
 | `update_plan` | 更新任务计划（任务模式，P2-2）：全量覆盖式创建/勾选，进度写回 AGENT_STATE.json 跨会话保存 | `{"title":"新增工具","items":[{"text":"注册","done":false}]}` |
 
 ## 任务模式（P2-2）
@@ -107,8 +112,8 @@ tests/tools.test.ts   self-test 用例（agent 修改自身代码后的验证闸
 2. 加载项目上下文（`loadProjectContext`）→ AGENTS.md（如有）+ README + docs + 文件树 + 记忆
 3. 组装系统提示词（`buildSystemPrompt`）→ 六区块（--self 时含 [任务模式]）+ skills 索引，预算 <5%
 4. **`--resume` 时从 `AGENT_CHECKPOINT.json` 恢复会话消息历史**（system 重建 + 末尾 tool 兜底 + 可选新任务追加）
-5. 循环：`chatCompletion` → 有 `tool_calls` 就 `executeTool` 并回填 → **每轮检查上下文预算，超限压缩早期 tool 结果（P2-3）** → **每次消息变更落盘 checkpoint（P2-4）** → 直到无工具调用
-6. 任务完成 → **重载 `loadState()`** 后写回 `lastTask` / `lastSummary` / `lastRunAt` / `contextWarnings` → **`clearCheckpoint()`** → 退出
+5. 记录**会话开始 HEAD**（`sessionStartHead`，P3-2 回滚锚点）；循环：`chatCompletion` → 有 `tool_calls` 就 `executeTool` 并回填 → **每轮检查上下文预算，超限压缩早期 tool 结果（P2-3）** → **每次消息变更落盘 checkpoint（P2-4）** → **每次工具调用后 appendAudit 入参/出参摘要（P3-4）** → **跟踪 didModify（write_file / 写操作 run_bash）** → 直到无工具调用
+6. 任务完成（无 tool_calls）→ **若 didModify 且为 git 仓库：收尾自动跑测试闸门（P3-2），失败自动回滚到会话开始前并复测** → **重载 `loadState()`** 后写回 `lastTask` / `lastSummary` / `lastRunAt` / `contextWarnings` → **`clearCheckpoint()`** → 退出
 
 ## 已解决的旧差距（M1 + skills + AGENTS.md + P2-1 + P2-2 + P2-3 + P2-4）
 
@@ -123,10 +128,13 @@ tests/tools.test.ts   self-test 用例（agent 修改自身代码后的验证闸
 9. ~~长任务消息无限增长（context rot）~~ → P2-3 上下文预算：`budget.ts` token 估算 + 最轻档 tool result clearing（最早的 tool 结果摘要化，先保 recall 再迭代 precision），告警写回 contextWarnings
 10. ~~中断丢上下文~~ → P2-4 `--resume` checkpoint：`AGENT_CHECKPOINT.json` 持久化会话消息历史（每次消息变更落盘），中断后恢复完整上下文继续，任务完成自动清除
 
-## 仍存在的差距（M3）
+## P3 质量与防护（2026-08 完成）
 
-9. **回滚靠手动**：git 快照已自动打，但测试闸门、自动 revert、审计日志属 P3，尚未落地。
-10. **权限分级未实现**：Claude Code permissions 模式（全自动区 + 需确认区）属 P3。
-11. **审计日志未实现**：每次工具调用的入参/出参摘要落盘属 P3。
+| 项 | 落地 |
+| --- | --- |
+| P3-1 git 安全阀补 run_bash | `src/git.ts`：`hasUncommittedChanges` / `snapshotIfDirty` / `currentHead`；`run_bash` 写操作命令（sed -i / git commit / bun install / touch 等）前工作区 dirty 则自动快照，只读命令不产生噪音提交 |
+| P3-2 测试闸门 | `src/gate.ts`：`runTestGate`（bun test pass/fail）/ `revertToHead`（reset --hard + clean -fd）/ `enforceTestGate`（失败自动回滚 + 复测）；主循环收尾 didModify 时自动触发；无测试信号（无 package.json / tests/）自动跳过 |
+| P3-3 沙箱权限分级 | 路径限制工作区内（cwd / path 越界拒绝）；危险命令黑名单（rm -rf /、git push、fork bomb、sudo、chmod -R、设备写入、下载即执行）；`BUN_BOT_PERMISSIONS=ask` 写操作需确认；`BUN_BOT_ALLOW_OUTSIDE_CWD=1` 放行越界 |
+| P3-4 审计日志 | `src/audit.ts`：每次工具调用入参/出参摘要落盘 `AUDIT.log.jsonl`（gitignore），`appendAudit` 防御性截断（400/500），`loadAudit` 最新在前；主循环 executeTool 后调用 |
 
 > 迭代计划见 [PLAN.md](./PLAN.md)。

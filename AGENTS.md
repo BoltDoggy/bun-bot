@@ -3,7 +3,7 @@
 > `/init` 生成于 2026-08-06：分析代码库（构建 / 测试 / 代码模式）后固化的项目级指令。
 > bun-bot 每次启动自动加载本文件，优先级最高（系统提示词 [规则] 第 5 条已声明）。
 > 改动本文件涉及行为变更时，同步更新 README / docs / tests 并跑 `bun test`。
-> 2026-08 修订：P2-2 任务模式（--self）+ P2-3 上下文预算 + P2-4 checkpoint（--resume）落地后，同步入口 / 可调变量 / 测试数字。
+> 2026-08 修订：P2-2 任务模式（--self）+ P2-3 上下文预算 + P2-4 checkpoint（--resume）+ P3 质量与防护（git 安全阀补 run_bash / 测试闸门自动回滚 / 沙箱权限分级 / 审计日志）落地后，同步入口 / 可调变量 / 测试数字。
 
 ## 运行与构建
 
@@ -14,7 +14,7 @@
 
 ## 测试闸门（改完必须跑）
 
-- `bun test`：30 用例 / 174 expect，零外部依赖 —— 任何代码改动后必须全绿
+- `bun test`：35 用例 / 225 expect，零外部依赖 —— 任何代码改动后必须全绿
 - `bun run skills/web-search/self-test.ts --online`：web-search skill 在线实测（改了解析逻辑必须跑）
 - 新增能力必须补测试用例：`tests/` 是自我进化的验证闸门
 
@@ -35,6 +35,11 @@
 - **本文件优先**：与 README / docs 冲突时以本文件为准
 
 ## 踩坑（非显然行为）
+
+- P3 安全：run_bash 的危险命令（rm -rf /、git push、fork bomb、sudo 等）会被权限系统直接拒绝 —— 被拒后改用安全写法或 write_file；路径（cwd / path）默认限制在工作区内，越界被拒（BUN_BOT_ALLOW_OUTSIDE_CWD=1 可放行，但不建议）
+- P3 测试闸门：本会话发生过自修改（write_file / 写操作 run_bash）时，收尾会自动跑 bun test；**失败会自动回滚到会话开始前的 HEAD**（reset --hard + clean -fd，gitignore 的本地状态文件不丢）—— 不用手动 revert，回滚后重新检查改动
+- run_bash 的写操作命令（含 sed -i / git commit / bun install / touch 等关键字）会先自动 git 快照；只读命令（git status / git diff）不产生噪音提交
+- 审计日志 AUDIT.log.jsonl（P3-4）每次工具调用都会追加一行（入参/出参摘要，防御性截断），gitignore 仅本地持久化
 
 - `run_script` 默认 cwd 是**临时沙箱**，读写工作区文件必须显式 `cwd: "."`
 - 工具输出上限 64KB，截断带偏移可续读；大文件用 `read_file` 的 `offset` 续读，别假设被截断
