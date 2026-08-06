@@ -1,12 +1,14 @@
 /**
- * memory.ts — 记忆读写（P0 + P2-2 任务模式）
+ * memory.ts — 记忆读写（P0 + P2-2 任务模式 + P2-3 预算告警）
  *
  * 数据：
- *   AGENT_STATE.json  机器可读状态（决策 / 踩坑 / TODO / 上次任务 / 当前任务计划）
+ *   AGENT_STATE.json  机器可读状态（决策 / 踩坑 / TODO / 上次任务 / 当前任务计划 / 上下文预算告警）
  *   MEMORY.md         人类可读版，由 AGENT_STATE.json 同步生成
  *
  * P2-2 任务模式：AgentState.activePlan 持久化当前任务的 plan（首轮产出、逐项勾选），
  *               进度跨会话保存 —— 中断/重启后可从上次断点继续（checkpoint 的基础）。
+ * P2-3 上下文预算：AgentState.contextWarnings 记录每次超限压缩告警（保留最近 10 条），
+ *               重启后 [记忆] 区块可见 —— agent 能感知长任务触发了多少次压缩。
  *
  * 注意：两个记忆文件在 .gitignore 中（每次会话写回会产生噪音），
  *       仅本地持久化，不纳入版本控制。
@@ -76,7 +78,7 @@ export interface AgentState {
   decisions: Decision[]; // 关键决策记录
   pitfalls: string[];    // 踩过的坑
   todo: string[];        // 待办
-  contextWarnings: string[]; // 上下文预算告警（P2 用）
+  contextWarnings: string[]; // 上下文预算告警（P2-3：超限压缩记录，保留最近 10 条）
   activePlan?: ActivePlan;   // 当前任务计划（P2-2 任务模式）
 }
 
@@ -158,6 +160,13 @@ export function syncMemoryFile(state: AgentState): void {
     for (const it of state.activePlan.items) {
       b.push("- [" + (it.done ? "x" : " ") + "] " + it.text + (it.detail ? "（" + it.detail + "）" : ""));
     }
+  }
+  // P2-3 上下文预算：超限压缩告警（重启后 agent 能感知长任务触发过多少次压缩）
+  if (state.contextWarnings.length) {
+    b.push("");
+    b.push("## 上下文预算告警");
+    b.push("");
+    for (const w of state.contextWarnings) b.push("- " + w);
   }
   writeFileSync(memoryPath(), b.join("\n") + "\n", "utf8");
 }
