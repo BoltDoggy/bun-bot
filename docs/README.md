@@ -2,8 +2,8 @@
 
 | 文档 | 说明 |
 | --- | --- |
-| ~~PLAN.md~~（已归档） | **历史迭代计划**：P0/P1/skills/AGENTS.md/P2-1 ~ P2-4/P3/**P4 通用化** 全部完成并收官，已随 2026-08 P4 收官清理删除（完整内容在 git 历史可追溯，如 commit `5d3fae4`） |
-| [ARCHITECTURE.md](./ARCHITECTURE.md) | 现状分析（as-is）：随代码演进更新，当前快照基于 M1（P0+P1）+ skills 能力 + AGENTS.md + P2-1 ~ P2-4 + P3 质量与防护 + **P4 通用化（可在任意项目使用）** 全部落地后的实际代码 |
+| ~~PLAN.md~~（已归档） | **历史迭代计划**：P0/P1/skills/AGENTS.md/P2-1 ~ P2-4/P3/**P4 通用化**/**P5 全平台分发** 全部完成并收官，已随 2026-08 清理删除（完整内容在 git 历史可追溯，如 commit `5d3fae4`） |
+| [ARCHITECTURE.md](./ARCHITECTURE.md) | 现状分析（as-is）：随代码演进更新，当前快照基于 M1（P0+P1）+ skills 能力 + AGENTS.md + P2-1 ~ P2-4 + P3 质量与防护 + **P4 通用化（可在任意项目使用）** + **P5 全平台分发（GitHub Actions 构建 + 安装脚本）** 全部落地后的实际代码 |
 
 ## 里程碑进度
 
@@ -57,9 +57,14 @@
   - P4-⑧ 大项目上下文加载：buildFileTree 感知 .gitignore + 扩展忽略（vendor/target/__pycache__/.venv 等）+ 行数预算截断（超限提示 list_dir）→ `tests/p4-filetree.test.ts`（4 用例）
   - P4-⑨ 交互模式 `--interactive`：多轮 REPL 对话连续（src/interactive.ts，runRound 可注入离线测试）+ index.ts 主循环提取 runAgentLoop → `tests/p4-interactive.test.ts`（4 用例）
   - 自测: `bun test` **76 用例 / 447 expect 全绿**；`bun build index.ts` 编译通过
+- ✅ **M5（P5 全平台分发）已完成**：无 bun 环境也能一键安装使用
+  - P5-① GitHub Actions 矩阵构建：`.github/workflows/build.yml` —— 6 平台（ubuntu-latest → linux-x64 / ubuntu-24.04-arm → linux-arm64 / macos-13 → darwin-x64 / macos-latest → darwin-arm64 / windows-latest → windows-x64 / windows-11-arm → windows-arm64 实验性），tag `v*` 触发发布 GitHub Release（每个产物附 `.sha256`）、workflow_dispatch 手动触发只出 artifact；构建逻辑收敛在 `scripts/build.sh`（bun install → **bun test 先绿** → `bun build --compile` → 生成 SHA256）
+  - P5-② 用户安装脚本：`scripts/install.sh`（POSIX sh，macOS/Linux：检测平台 → 下载（latest 或指定版本）→ SHA256 校验（失败中止）→ 装到 ~/.local/bin → PATH 提示）+ `scripts/install.ps1`（Windows：下载 .exe → Get-FileHash 校验 → 装到 %LOCALAPPDATA%\bun-bot\bin → 加用户 PATH）；支持 `BUN_BOT_REPO` / `BUN_BOT_VERSION` / `BUN_BOT_BASE_URL` 等环境变量覆盖
+  - P5-③ 端到端验证：`tests/p5-release.test.ts`（9 用例 / 44 expect）—— workflow 矩阵与触发断言 + install.sh 用本地 `Bun.serve` mock release 服务器跑真实下载 → 校验 → 安装（可执行位用 `statSync().mode & 0o111`）+ 校验失败中止 + windows .exe 命名 + install.ps1 关键逻辑断言
+  - 自测: `bun test` **85 用例 / 490 expect 全绿**；`bash scripts/build.sh` 实测产出 `dist/bun-bot-darwin-arm64`（61MB）+ `.sha256`，`shasum -c` 通过，产物 `run` 子命令自举正常（embedded-runtime-ok 1.3.14）
 
 ## 与主 README 的关系
 
 主 [README.md](../README.md) 面向使用者（快速开始 / 工具集 / 配置项）；本目录面向**自我迭代**（进度 / 现状），是 agent 启动时加载的"项目上下文"一部分。
 
-> 更新时间：2026-08 · 起点 = 模型支持 1M 上下文 · 最新修订 = ARCHITECTURE 快照对齐 M1 + skills + AGENTS.md + P2-1 ~ P2-4 + P3 + **P4 通用化** 后代码（P2 + P3 + P4 全部完成），并同步**旧设计兼容清理**（移除旧位置状态文件兼容读取、删除根目录旧状态文件、归档 PLAN.md）
+> 更新时间：2026-08 · 起点 = 模型支持 1M 上下文 · 最新修订 = ARCHITECTURE 快照对齐 M1 + skills + AGENTS.md + P2-1 ~ P2-4 + P3 + **P4 通用化** + **P5 全平台分发** 后代码（P2 + P3 + P4 + P5 全部完成），并同步**旧设计兼容清理**（移除旧位置状态文件兼容读取、删除根目录旧状态文件、归档 PLAN.md）
