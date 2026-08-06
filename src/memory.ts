@@ -8,6 +8,10 @@
  * 注意：两个记忆文件在 .gitignore 中（每次会话写回会产生噪音），
  *       仅本地持久化，不纳入版本控制。
  *
+ * 项目级指令：
+ *   AGENT.md          可选。项目根目录的 agent 指令文件（类似 CLAUDE.md 的通用约定），
+ *                     存在时由 loadProjectContext 加载，优先级高于 README / docs。
+ *
  * 工作区：默认 process.cwd()，可用环境变量 BUN_BOT_WORKSPACE 覆盖（便于测试沙箱）。
  */
 import {
@@ -21,6 +25,7 @@ import { join } from "node:path";
 
 export const STATE_FILE = "AGENT_STATE.json";
 export const MEMORY_FILE = "MEMORY.md";
+export const AGENT_FILE = "AGENT.md";
 
 /** 当前工作区根目录（agent 可以读写的地方） */
 export function workspace(): string {
@@ -159,6 +164,24 @@ export function buildFileTree(maxDepth = 4, base = workspace()): string {
   return lines.join("\n");
 }
 
+/**
+ * 读取 AGENT.md 项目指令（存在时返回内容，不存在返回 null）。
+ * 指令优先级高于 README / docs：它是用户与 agent 之间的项目级契约。
+ */
+export function readAgentDirective(): string | null {
+  try {
+    const p = join(workspace(), AGENT_FILE);
+    if (!existsSync(p)) return null;
+    const content = readFileSync(p, "utf8");
+    if (content.length > 8000) {
+      return content.slice(0, 8000) + "\n… [AGENT.md 过长，仅展示前 8000 字符，需完整内容请 read_file]";
+    }
+    return content;
+  } catch {
+    return null;
+  }
+}
+
 /** 读取 README + docs 索引 + 文件树，组装项目认知（按需截断） */
 export function loadProjectContext(): string {
   const parts: string[] = [];
@@ -171,6 +194,9 @@ export function loadProjectContext(): string {
       return null;
     }
   };
+  // AGENT.md 是项目级指令，放在最前，优先级最高
+  const agent = readAgentDirective();
+  if (agent) parts.push("## " + AGENT_FILE + "（项目级指令，优先级最高）\n" + agent);
   const readme = readIf(join(workspace(), "README.md"), 8000);
   if (readme) parts.push("## README.md\n" + readme);
   const docsIdx = readIf(join(workspace(), "docs", "README.md"), 2000);
