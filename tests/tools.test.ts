@@ -1,9 +1,10 @@
 /**
- * tools.test.ts — M1 自测闸门（+ skills 层 + AGENTS.md 项目指令 + P2-1 ACI 化）
+ * tools.test.ts — M1 自测闸门（+ skills 层 + AGENTS.md 项目指令 + P2-1 ACI 化 + P2-2 任务模式）
  *
  * 覆盖：run_script（沙箱 cwd / 工作区 cwd）、read_file（偏移续读）、write_file（diff）、
  *       list_dir（-a）、run_bash、输出截断、工具描述 example usage（P2-1）、
- *       记忆读写、skills 索引、web-search 解析器、AGENTS.md 项目级指令加载与优先级。
+ *       记忆读写、skills 索引、web-search 解析器、AGENTS.md 项目级指令加载与优先级、
+ *       update_plan 任务计划（P2-2：创建/勾选/完成度/记忆往返/任务模式提示词）。
  *
  * 运行：bun test  或  bun run tests/tools.test.ts
  */
@@ -150,16 +151,16 @@ test("summarizeDiff 相同内容返回无变化", () => {
 
 // ---------- 工具描述 ACI 化（P2-1） ----------
 
-test("5 个工具 description 均带 example usage（P2-1 ACI 化）", () => {
-  expect(tools.length).toBe(5);
+test("6 个工具 description 均带 example usage（P2-1 ACI 化）", () => {
+  expect(tools.length).toBe(6);
   const names = tools.map((t) => t.function.name);
-  expect(names).toEqual(["run_script", "read_file", "write_file", "list_dir", "run_bash"]);
+  expect(names).toEqual(["run_script", "read_file", "write_file", "list_dir", "run_bash", "update_plan"]);
   for (const t of tools) {
     const desc = t.function.description;
     expect(desc).toContain("示例：");
     // 示例必须是真实的 JSON 参数形态（以 { 开头），而不是空话
     const examplePart = desc.slice(desc.indexOf("示例："));
-    expect(examplePart).toMatch(/\{"/);
+    expect(examplePart).toMatch(/\{\"/);
   }
   // 必填参数在 schema 中声明
   for (const t of tools) {
@@ -289,4 +290,117 @@ test("web-search 解析器对离线样本工作正常", () => {
   expect(ddg.length).toBe(2);
   expect(ddg[0].url).toBe("https://bun.sh/");
   expect(ddg[0].snippet).toContain("Bundle");
+});
+
+// ---------- 任务模式 update_plan（P2-2） ----------
+
+test("update_plan 创建/勾选计划，进度写回 AGENT_STATE.json + MEMORY.md（任务模式）", async () => {
+  // 首轮创建
+  const create = JSON.parse(await executeTool("update_plan", JSON.stringify({
+    title: "新增 read_file 工具",
+    items: [
+      { text: "在 tools.ts 注册 read_file", done: false },
+      { text: "补文档与测试", done: false },
+    ],
+  })));
+  expect(create.saved).toBe(true);
+  expect(create.total).toBe(2);
+  expect(create.doneCount).toBe(0);
+  expect(create.percent).toBe(0);
+  expect(create.status).toBe("active");
+  expect(create.title).toBe("新增 read_file 工具");
+  expect(create.note).toContain("AGENT_STATE.json");
+
+  // 勾选第一步（title 省略保留原标题）
+  const check = JSON.parse(await executeTool("update_plan", JSON.stringify({
+    items: [
+      { text: "在 tools.ts 注册 read_file", done: true, detail: "bun test 通过" },
+      { text: "补文档与测试", done: false },
+    ],
+  })));
+  expect(check.title).toBe("新增 read_file 工具"); // 原标题保留
+  expect(check.doneCount).toBe(1);
+  expect(check.percent).toBe(50);
+  expect(check.status).toBe("active");
+
+  // 记忆往返：activePlan 持久化
+  const s = loadState();
+  expect(s.activePlan?.title).toBe("新增 read_file 工具");
+  expect(s.activePlan?.items.length).toBe(2);
+  expect(s.activePlan?.items[0].done).toBe(true);
+  expect(s.activePlan?.items[0].detail).toBe("bun test 通过");
+  expect(s.activePlan?.items[1].done).toBe(false);
+  expect(s.activePlan?.createdAt).toBeDefined();
+  expect(s.activePlan?.updatedAt).toBeDefined();
+
+  // MEMORY.md 同步出现"当前任务计划"区块
+  const md = readFileSync(memoryPath(), "utf8");
+  expect(md).toContain("## 当前任务计划");
+  expect(md).toContain("新增 read_file 工具");
+  expect(md).toContain("1/2 完成");
+  expect(md).toContain("- [x] 在 tools.ts 注册 read_file（bun test 通过）");
+  expect(md).toContain("- [ ] 补文档与测试");
+
+  // 全部完成 → status done
+  const done = JSON.parse(await executeTool("update_plan", JSON.stringify({
+    items: [
+      { text: "在 tools.ts 注册 read_file", done: true },
+      { text: "补文档与测试", done: true },
+    ],
+  })));
+  expect(done.status).toBe("done");
+  expect(done.percent).toBe(100);
+  const s2 = loadState();
+  expect(s2.activePlan?.status).toBe("done");
+
+  // 清理：避免残留 activePlan 影响后续用例
+  const clean = loadState();
+  clean.activePlan = undefined;
+  saveState(clean);
+  syncMemoryFile(clean);
+});
+
+test("update_plan 参数校验：缺 items / 空 text 返回错误", async () => {
+  const noItems = JSON.parse(await executeTool("update_plan", JSON.stringify({ title: "x" })));
+  expect(noItems.error).toContain("items");
+
+  const emptyText = JSON.parse(await executeTool("update_plan", JSON.stringify({
+    items: [{ text: "  ", done: false }],
+  })));
+  expect(emptyText.error).toContain("text");
+});
+
+test("任务模式系统提示词：--self 注入 [任务模式] 区块并展示 activePlan 进度", () => {
+  const s = loadState();
+  s.activePlan = {
+    title: "续跑任务",
+    createdAt: "2026-08-06T00:00:00.000Z",
+    updatedAt: "2026-08-06T00:01:00.000Z",
+    items: [
+      { text: "第一步", done: true, detail: "完成" },
+      { text: "第二步", done: false },
+    ],
+    status: "active",
+  };
+  // 非 self 模式：无 [任务模式] 区块，但 [记忆] 展示计划
+  const normal = buildSystemPrompt({ state: s, project: "proj" });
+  expect(normal).not.toContain("[任务模式]");
+  expect(normal).toContain("当前任务计划: 续跑任务（1/2 完成 ⏳）");
+  expect(normal).toContain("[x] 第一步 — 完成");
+  // self 模式：注入任务模式区块 + 未完成续跑提示
+  const self = buildSystemPrompt({ state: s, project: "proj", selfMode: true });
+  expect(self).toContain("[任务模式]");
+  expect(self).toContain("update_plan");
+  expect(self).toContain("检测到上次未完成的计划「续跑任务」");
+  expect(self).toContain("优先继续它而非重建");
+  // 全部完成时不提示续跑
+  const doneState = loadState();
+  doneState.activePlan = { ...s.activePlan!, status: "done" };
+  const selfDone = buildSystemPrompt({ state: doneState, project: "proj", selfMode: true });
+  expect(selfDone).not.toContain("检测到上次未完成的计划");
+  // 清理
+  const clean = loadState();
+  clean.activePlan = undefined;
+  saveState(clean);
+  syncMemoryFile(clean);
 });
