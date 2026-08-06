@@ -1,9 +1,12 @@
 /**
- * memory.ts — 记忆读写（P0）
+ * memory.ts — 记忆读写（P0 + P2-2 任务模式）
  *
  * 数据：
- *   AGENT_STATE.json  机器可读状态（决策 / 踩坑 / TODO / 上次任务）
+ *   AGENT_STATE.json  机器可读状态（决策 / 踩坑 / TODO / 上次任务 / 当前任务计划）
  *   MEMORY.md         人类可读版，由 AGENT_STATE.json 同步生成
+ *
+ * P2-2 任务模式：AgentState.activePlan 持久化当前任务的 plan（首轮产出、逐项勾选），
+ *               进度跨会话保存 —— 中断/重启后可从上次断点继续（checkpoint 的基础）。
  *
  * 注意：两个记忆文件在 .gitignore 中（每次会话写回会产生噪音），
  *       仅本地持久化，不纳入版本控制。
@@ -48,6 +51,23 @@ export interface Decision {
   why: string;
 }
 
+/** 任务计划条目（P2-2）：text 是步骤描述，done 是否完成，detail 记录验证结果 */
+export interface PlanItem {
+  text: string;
+  done: boolean;
+  detail?: string;
+}
+
+/** 当前任务计划（P2-2）：持久化在 AGENT_STATE.json，跨会话续跑不丢目标 */
+export interface ActivePlan {
+  title: string;
+  createdAt: string;
+  updatedAt: string;
+  items: PlanItem[];
+  /** active=进行中 / done=全部勾选完成 / aborted=中断放弃 */
+  status: "active" | "done" | "aborted";
+}
+
 export interface AgentState {
   version: number;
   lastTask: string;      // 上次任务的描述
@@ -57,6 +77,7 @@ export interface AgentState {
   pitfalls: string[];    // 踩过的坑
   todo: string[];        // 待办
   contextWarnings: string[]; // 上下文预算告警（P2 用）
+  activePlan?: ActivePlan;   // 当前任务计划（P2-2 任务模式）
 }
 
 export const DEFAULT_STATE: AgentState = {
@@ -68,6 +89,7 @@ export const DEFAULT_STATE: AgentState = {
   pitfalls: [],
   todo: [],
   contextWarnings: [],
+  activePlan: undefined,
 };
 
 /** 读取 AGENT_STATE.json；文件不存在或损坏时返回默认态 */
@@ -124,6 +146,19 @@ export function syncMemoryFile(state: AgentState): void {
   b.push("");
   if (!state.todo.length) b.push("（暂无）");
   for (const t of state.todo) b.push("- [ ] " + t);
+  // P2-2 任务模式：当前任务计划（中断/重启后从 [记忆] 可见进度）
+  if (state.activePlan) {
+    const total = state.activePlan.items.length;
+    const done = state.activePlan.items.filter((it) => it.done).length;
+    b.push("");
+    b.push("## 当前任务计划");
+    b.push("");
+    b.push("**" + state.activePlan.title + "**（" + done + "/" + total + " 完成" +
+      (state.activePlan.status === "done" ? " ✅" : " ⏳") + "）");
+    for (const it of state.activePlan.items) {
+      b.push("- [" + (it.done ? "x" : " ") + "] " + it.text + (it.detail ? "（" + it.detail + "）" : ""));
+    }
+  }
   writeFileSync(memoryPath(), b.join("\n") + "\n", "utf8");
 }
 
