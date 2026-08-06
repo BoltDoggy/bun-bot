@@ -151,7 +151,7 @@ test("install.sh 端到端：下载 → SHA256 校验 → 安装（可执行位�
   const dir = join(tmp, "bin-e2e");
   const r = await runInstall(["--dir", dir, "--target", "linux-x64", "--version", "latest"]);
   expect(r.exitCode).toBe(0);
-  expect(r.stdout).toContain("SHA256 校验");
+  expect(r.stdout).toContain("校验 SHA256");
   expect(r.stdout).toContain("已安装");
   const installed = join(dir, "bun-bot-linux-x64");
   expect(existsSync(installed)).toBe(true);
