@@ -1,10 +1,11 @@
 /**
- * tools.test.ts — M1 自测闸门（+ skills 层 + AGENTS.md 项目指令 + P2-1 ACI 化 + P2-2 任务模式）
+ * tools.test.ts — M1 自测闸门（+ skills 层 + AGENTS.md 项目指令 + P2-1 ACI 化 + P2-2 任务模式 + P2-3 上下文预算）
  *
  * 覆盖：run_script（沙箱 cwd / 工作区 cwd）、read_file（偏移续读）、write_file（diff）、
  *       list_dir（-a）、run_bash、输出截断、工具描述 example usage（P2-1）、
  *       记忆读写、skills 索引、web-search 解析器、AGENTS.md 项目级指令加载与优先级、
- *       update_plan 任务计划（P2-2：创建/勾选/完成度/记忆往返/任务模式提示词）。
+ *       update_plan 任务计划（P2-2：创建/勾选/完成度/记忆往返/任务模式提示词）、
+ *       budget.ts 上下文预算（P2-3：token 估算 / tool result clearing 压缩 / 告警展示）。
  *
  * 运行：bun test  或  bun run tests/tools.test.ts
  */
@@ -31,6 +32,7 @@ import {
   AGENTS_FILE,
 } from "../src/memory";
 import { skillsIndex, buildSystemPrompt } from "../src/context";
+import { estimateTokens, estimateMessagesTokens, compressContext } from "../src/budget";
 import { parseBingHtml, parseDdgHtml } from "../skills/web-search/search";
 
 let tmp: string;
@@ -173,9 +175,9 @@ test("6 个工具 description 均带 example usage（P2-1 ACI 化）", () => {
 
 test("系统提示词 [能力] 区块工具描述带示例（P2-1 双保险）", () => {
   const prompt = buildSystemPrompt({ state: loadState(), project: "proj" });
-  expect(prompt).toContain("示例：{\"code\":\"console.log(1+1)\"}");
-  expect(prompt).toContain("示例：{\"path\":\"src/tools.ts\"}");
-  expect(prompt).toContain("示例：{\"command\":\"bun test\"}");
+  expect(prompt).toContain("示例：{\\\"code\\\":\\\"console.log(1+1)\\\"}");
+  expect(prompt).toContain("示例：{\\\"path\\\":\\\"src/tools.ts\\\"}");
+  expect(prompt).toContain("示例：{\\\"command\\\":\\\"bun test\\\"}");
 });
 
 // ---------- 记忆读写 ----------
@@ -401,6 +403,103 @@ test("任务模式系统提示词：--self 注入 [任务模式] 区块并展示
   // 清理
   const clean = loadState();
   clean.activePlan = undefined;
+  saveState(clean);
+  syncMemoryFile(clean);
+});
+
+// ---------- 上下文预算 budget.ts（P2-3） ----------
+
+test("estimateTokens 中英文混合估算：ASCII 4 字符 1 token，中文 1 字 1 token", () => {
+  expect(estimateTokens("")).toBe(0);
+  expect(estimateTokens("hello world")).toBe(Math.ceil(11 / 4)); // 3
+  expect(estimateTokens("你好世界")).toBe(4);
+  expect(estimateTokens("hi 你好")).toBe(3); // ascii 3 → 1 + 中文 2 → 2
+});
+
+test("estimateMessagesTokens 汇总 content 与 tool_calls 参数", () => {
+  const msgs = [
+    { role: "system", content: "sys" },
+    { role: "assistant", content: null, tool_calls: [{ id: "t1", type: "function", function: { name: "run_script", arguments: "{}" } }] },
+    { role: "tool", tool_call_id: "t1", content: "x".repeat(400) },
+  ];
+  const tokens = estimateMessagesTokens(msgs);
+  expect(tokens).toBeGreaterThan(0);
+  // 只有 content 的估算必然小于整段（含 tool_calls 与 400 字符结果）
+  expect(tokens).toBeGreaterThan(estimateTokens("sys"));
+});
+
+test("compressContext 不超限时原样返回（不复制数组）", () => {
+  const msgs = [
+    { role: "system", content: "sys" },
+    { role: "tool", tool_call_id: "t1", content: "short" },
+  ];
+  const r = compressContext(msgs, 100_000);
+  expect(r.cleared).toBe(0);
+  expect(r.messages).toBe(msgs); // 引用不变
+  expect(r.messages[1].content).toBe("short");
+});
+
+test("compressContext 超限时清最早的 tool 结果、保留消息结构（P2-3 tool result clearing）", () => {
+  const big = "y".repeat(5000);
+  const msgs = [
+    { role: "system", content: "system prompt" },
+    { role: "assistant", content: null, tool_calls: [{ id: "t1", type: "function", function: { name: "run_script", arguments: "{}" } }] },
+    { role: "tool", tool_call_id: "t1", content: big },
+    { role: "assistant", content: null, tool_calls: [{ id: "t2", type: "function", function: { name: "read_file", arguments: "{}" } }] },
+    { role: "tool", tool_call_id: "t2", content: big },
+    { role: "user", content: "继续" },
+  ];
+  const r = compressContext(msgs, 500);
+  expect(r.cleared).toBeGreaterThan(0);
+  expect(r.beforeTokens).toBeGreaterThan(500);
+  expect(r.afterTokens).toBeLessThan(r.beforeTokens);
+  // 结构保留：消息数不变、system 不被清、tool_call_id 关联还在
+  expect(r.messages.length).toBe(msgs.length);
+  expect(r.messages[0].content).toBe("system prompt");
+  expect(r.messages[2].tool_call_id).toBe("t1");
+  // 最早的 tool 结果被摘要化：保留前缀 + 清理标记 + 原始长度
+  expect(r.messages[2].content.length).toBeLessThan(big.length);
+  expect(r.messages[2].content).toContain("已清理");
+  expect(r.messages[2].content).toContain("5000 字符");
+  // 更新的 tool 结果（t2）优先保留完整（先清最老的）
+  expect(r.messages[4].content).toBe(big);
+});
+
+test("compressContext 多轮清理直到低于预算，全清后停止（不无限循环）", () => {
+  const big = "z".repeat(10000);
+  const msgs = [
+    { role: "system", content: "sys" },
+    { role: "tool", tool_call_id: "t1", content: big },
+    { role: "tool", tool_call_id: "t2", content: big },
+    { role: "tool", tool_call_id: "t3", content: big },
+    { role: "user", content: "go" },
+  ];
+  const tinyBudget = 100;
+  const r = compressContext(msgs, tinyBudget);
+  // 全部 tool 结果都被摘要化
+  expect(r.cleared).toBe(3);
+  expect(r.messages.length).toBe(5);
+  for (const m of r.messages) {
+    if (m.role === "tool") expect(m.content).toContain("已清理");
+  }
+  // 摘要本身也占 token，全清后仍可能超 tinyBudget，但清理次数有上限（3 条 tool）
+  expect(r.cleared).toBeLessThanOrEqual(3);
+});
+
+test("buildSystemPrompt [记忆] 区块展示上下文预算告警 + MEMORY.md 同步（P2-3）", () => {
+  const s = loadState();
+  s.contextWarnings = ["第 42 轮：上下文超预算，清理 3 条工具结果（150000 → 80000 tokens）"];
+  const prompt = buildSystemPrompt({ state: s, project: "proj" });
+  expect(prompt).toContain("上下文预算告警");
+  expect(prompt).toContain("第 42 轮");
+  // MEMORY.md 同步出现"上下文预算告警"区块
+  syncMemoryFile(s);
+  const md = readFileSync(memoryPath(), "utf8");
+  expect(md).toContain("## 上下文预算告警");
+  expect(md).toContain("第 42 轮");
+  // 清理，避免影响其他用例
+  const clean = loadState();
+  clean.contextWarnings = [];
   saveState(clean);
   syncMemoryFile(clean);
 });
