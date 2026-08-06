@@ -1,8 +1,9 @@
 /**
- * tools.test.ts — M1 自测闸门（+ skills 层）
+ * tools.test.ts — M1 自测闸门（+ skills 层 + AGENT.md 项目指令）
  *
  * 覆盖：run_script（沙箱 cwd / 工作区 cwd）、read_file（偏移续读）、write_file（diff）、
- *       list_dir（-a）、run_bash、输出截断、记忆读写、skills 索引与 web-search 解析器。
+ *       list_dir（-a）、run_bash、输出截断、记忆读写、skills 索引、web-search 解析器、
+ *       AGENT.md 项目级指令加载与优先级。
  *
  * 运行：bun test  或  bun run tests/tools.test.ts
  */
@@ -23,6 +24,9 @@ import {
   workspace,
   statePath,
   memoryPath,
+  loadProjectContext,
+  readAgentDirective,
+  AGENT_FILE,
 } from "../src/memory";
 import { skillsIndex, buildSystemPrompt } from "../src/context";
 import { parseBingHtml, parseDdgHtml } from "../skills/web-search/search";
@@ -168,6 +172,47 @@ test("记忆保存/加载往返 + MEMORY.md 同步生成", () => {
 
 test("workspace() 返回测试沙箱", () => {
   expect(workspace()).toBe(tmp);
+});
+
+// ---------- AGENT.md 项目级指令 ----------
+
+test("AGENT.md 不存在时 readAgentDirective 返回 null，loadProjectContext 静默跳过", () => {
+  const p = join(tmp, AGENT_FILE);
+  if (existsSync(p)) rmSync(p);
+  expect(readAgentDirective()).toBeNull();
+  const ctx = loadProjectContext();
+  expect(ctx).not.toContain("## " + AGENT_FILE);
+  expect(ctx).toContain("## README.md");
+});
+
+test("AGENT.md 存在时被加载，且排在 README 之前（优先级最高）", () => {
+  const agentContent = [
+    "# 项目指令",
+    "",
+    "- 禁止修改 docs/ 下的文件",
+    "- 所有改动必须跑 `bun test` 验证",
+  ].join("\n");
+  writeFileSync(join(tmp, AGENT_FILE), agentContent);
+
+  const directive = readAgentDirective();
+  expect(directive).toContain("禁止修改 docs/ 下的文件");
+
+  const ctx = loadProjectContext();
+  const agentIdx = ctx.indexOf("## " + AGENT_FILE);
+  const readmeIdx = ctx.indexOf("## README.md");
+  expect(agentIdx).toBeGreaterThanOrEqual(0);
+  expect(agentIdx).toBeLessThan(readmeIdx); // 指令在前
+  expect(ctx).toContain("项目级指令");
+  expect(ctx).toContain("禁止修改 docs/ 下的文件");
+
+  // 系统提示词声明 AGENT.md 的约束力
+  const prompt = buildSystemPrompt({ state: loadState(), project: ctx });
+  expect(prompt).toContain(AGENT_FILE);
+  expect(prompt).toContain("约束力");
+  expect(prompt).toContain("以 " + AGENT_FILE + " 为准");
+
+  // 清理，避免影响其他用例
+  rmSync(join(tmp, AGENT_FILE));
 });
 
 // ---------- skills 层 ----------
