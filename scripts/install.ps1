@@ -7,8 +7,9 @@
     # 或下载后本地执行:
     powershell -ExecutionPolicy Bypass -File scripts/install.ps1 [-Dir <目录>] [-Version <版本>] [-Repo <owner/repo>]
 
-  行为: 检测架构 → 下载 bun-bot-windows-<arch>.exe 与 .sha256 → SHA256 校验 → 安装到
-  %LOCALAPPDATA%\bun-bot\bin（或 -Dir 指定）→ 加入用户 PATH（新终端生效）。
+  行为: 检测架构 → 下载 bun-bot-windows-<arch>.exe 与 .sha256 → SHA256 校验 → 安装
+  （重命名为 bun-bot.exe，命令统一不带平台后缀）到 %LOCALAPPDATA%\bun-bot\bin
+  （或 -Dir 指定）→ 加入用户 PATH（新终端生效）。
 #>
 param(
   [string]$Dir = "",
@@ -24,7 +25,10 @@ if ($arch -eq "AMD64") { $arch = "x64" }
 elseif ($arch -eq "ARM64") { $arch = "arm64" }
 else { Write-Error "不支持的架构: $arch（仅支持 x64 / arm64）"; exit 1 }
 $target = "windows-$arch"
+
+# Release 资产名（下载用）与安装后的命令名（统一 bun-bot.exe）
 $file = "bun-bot-$target.exe"
+$bin  = "bun-bot.exe"
 
 # ---------- Release 资产 URL ----------
 $base = "https://github.com/$Repo/releases"
@@ -35,7 +39,7 @@ $sumUrl = "$url.sha256"
 # ---------- 安装目录（默认 %LOCALAPPDATA%\bun-bot\bin，无需管理员权限） ----------
 if (-not $Dir) { $Dir = Join-Path $env:LOCALAPPDATA "bun-bot\bin" }
 New-Item -ItemType Directory -Force -Path $Dir | Out-Null
-$dest = Join-Path $Dir $file
+$dest = Join-Path $Dir $bin
 
 Write-Host "[install] 平台: $target | 版本: $Version | 安装目录: $Dir"
 Write-Host "[install] 下载 $url"
@@ -56,17 +60,20 @@ try {
   Write-Warning "无法下载 SHA256 校验文件，跳过完整性校验: $sumUrl"
 }
 
+# 清理旧版安装脚本残留的平台名文件（bun-bot-windows-<arch>.exe）
+Remove-Item (Join-Path $Dir $file) -Force -ErrorAction SilentlyContinue
+
 # ---------- 加入用户 PATH（HKCU\Environment，不污染系统 PATH） ----------
-$bin = $Dir
+$binDir = $Dir
 $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
-if ($userPath -notlike "*$bin*") {
-  $newPath = if ($userPath) { "$userPath;$bin" } else { $bin }
+if ($userPath -notlike "*$binDir*") {
+  $newPath = if ($userPath) { "$userPath;$binDir" } else { $binDir }
   [Environment]::SetEnvironmentVariable("Path", $newPath, "User")
-  Write-Host "[install] 已将 $bin 加入用户 PATH（新终端生效）"
+  Write-Host "[install] 已将 $binDir 加入用户 PATH（新终端生效）"
 } else {
-  Write-Host "[install] $bin 已在用户 PATH 中"
+  Write-Host "[install] $binDir 已在用户 PATH 中"
 }
 
 Write-Host "[install] 已安装: $dest"
-Write-Host "下一步：设置环境变量 DEEPSEEK_API_KEY 后运行：$file `"你的任务`""
-Write-Host "版本确认：$file --version"
+Write-Host "下一步：设置环境变量 DEEPSEEK_API_KEY 后运行：bun-bot `"你的任务`""
+Write-Host "版本确认：bun-bot --version"
