@@ -29,7 +29,7 @@
 | 审计日志 | ✅ P3-4 已完成：`src/audit.ts` —— 每次工具调用入参/出参摘要落盘 `AUDIT.log.jsonl`（gitignore），`appendAudit` 内部防御性截断（400 / 500），`loadAudit` 最新在前 |
 | 编译产物自举 | ✅ 已落地：`run_script` spawn 自身（`process.execPath`：源码时=bun、编译时=编译产物）；入口 `run <script>` 子命令（index.ts 拦截于 API key 检查前）用内嵌运行时执行外部脚本，且 `init` / `--version` / `--help` 同样走 API key 检查前拦截（编译产物 = 完整 CLI） —— `bun build --compile` 后无 bun 环境也能跑（端到端实测：PATH 仅 /usr/bin:/bin 下 `./bun-bot-demo run <script>` exitCode 0，Bun API / 相对 import / 顶层 await 全可用） |
 | 全平台分发 | ✅ P5 已完成：`.github/workflows/build.yml` 原生矩阵构建 6 平台（ubuntu-latest → linux-x64 / ubuntu-24.04-arm → linux-arm64 / macos-13 → darwin-x64 / macos-latest → darwin-arm64 / windows-latest → windows-x64 / windows-11-arm → windows-arm64 实验性），tag `v*` 自动发布 Release（每个产物附 `.sha256`）、手动触发只出 artifact；`scripts/install.sh`（macOS/Linux）+ `scripts/install.ps1`（Windows）一行安装：检测平台 → 下载 → SHA256 校验 → 安装为 bun-bot（命令统一不带平台后缀）→ PATH；`scripts/build.sh` 本地与 CI 共用（bun install → bun test → bun build --compile → .sha256） |
-| 自测 | 86 用例 / 508 expect，零外部依赖（`bun test`）；web-search 另有 `self-test.ts --online` 在线实测 |
+| 自测 | 86 用例 / 509 expect，零外部依赖（`bun test`）；web-search 另有 `self-test.ts --online` 在线实测 |
 
 ## 模块解剖
 
@@ -50,7 +50,7 @@ src/interactive.ts     交互模式（P4-10）：driveInteractive / isExitInput 
 src/audit.ts           审计日志（P3-4）：appendAudit / loadAudit —— 落盘 .bunbot/AUDIT.log.jsonl
 bin/bun-bot.ts         CLI 分发（P4-6）：复用 src/cli.ts 的 init / --version / --help / 透传 index.ts（bun link 全局安装；编译产物入口 index.ts 同样支持）
 skills/               组合操作库：skills/<name>/SKILL.md + 实现 + 离线样本 + 自测
-tests/                self-test 用例 86 / 508 expect（tools + memory + checkpoint + skills + AGENTS.md + P2/P3/P4 各闸门 + P5 release，零外部依赖）
+tests/                self-test 用例 86 / 509 expect（tools + memory + checkpoint + skills + AGENTS.md + P2/P3/P4 各闸门 + P5 release，零外部依赖）
 ```
 
 ## 工具集（6 个，description 均带 example usage）
@@ -71,7 +71,7 @@ tests/                self-test 用例 86 / 508 expect（tools + memory + checkp
 | 构建工作流 | `.github/workflows/build.yml`：`on` = push tag `v*` + workflow_dispatch；`strategy.matrix` 6 平台（ubuntu-latest / ubuntu-24.04-arm / macos-13 / macos-latest / windows-latest / windows-11-arm），windows-arm64 标 `experimental: true` + `continue-on-error` 不阻塞；步骤 = checkout → setup-bun → `bash scripts/build.sh <target>` → upload-artifact（dist/*）→ 若 tag 触发 `softprops/action-gh-release` 发布 Release（含 .sha256） |
 | 构建脚本 | `scripts/build.sh [target]`：bun install → **bun test（测试闸门先绿才出产物）** → `bun build --compile index.ts --outfile dist/bun-bot-<target>[.exe]` → 生成 `.sha256`（sha256sum / shasum 兜底）；target 白名单校验；缺省自动检测当前平台（与 install.sh 同映射） |
 | 安装脚本（unix） | `scripts/install.sh`（POSIX sh，`set -eu`）：`detect_target`（uname -s/-m → darwin/linux/windows × x64/arm64）；URL = `$BASE/latest/download/` 或 `$BASE/download/v<版本>/`；curl/wget 下载 → **SHA256 校验失败必须中止**（sha256sum -c / shasum -a 256 -c）→ `install -m 0755` 重命名为 `bun-bot` 装到 ~/.local/bin（/usr/local/bin 可写则用之）→ PATH 提示；环境变量可覆盖：`BUN_BOT_REPO` / `BUN_BOT_VERSION` / `BUN_BOT_INSTALL_DIR` / `BUN_BOT_TARGET` / `BUN_BOT_BASE_URL` |
-| 安装脚本（windows） | `scripts/install.ps1`：`PROCESSOR_ARCHITECTURE` → x64/arm64；`Invoke-WebRequest` 下载 .exe → `Get-FileHash` SHA256 校验（失败删除并中止）→ 装为 `bun-bot.exe` 到 `%LOCALAPPDATA%\bun-bot\bin` → `SetEnvironmentVariable` 加用户 PATH |
+| 安装脚本（windows） | `scripts/install.ps1`：`PROCESSOR_ARCHITECTURE` → x64/arm64；`Invoke-WebRequest` 下载 .exe → `Get-FileHash` SHA256 校验（失败删除并中止）→ 重命名为 `bun-bot.exe` 装到 `%LOCALAPPDATA%\bun-bot\bin` → `SetEnvironmentVariable` 加用户 PATH |
 | 端到端验证 | `tests/p5-release.test.ts`（9 用例 / 45 expect）：workflow 矩阵与触发断言；build.sh 关键逻辑断言；install.sh 用本地 `Bun.serve` mock release 服务器（`BUN_BOT_BASE_URL` 指向）跑真实下载 → 校验 → 安装（可执行位用 `statSync().mode & 0o111`）；windows .exe 命名；指定版本路径；校验失败中止且不落盘；install.ps1 关键逻辑断言 |
 
 ## 任务模式（P2-2）
