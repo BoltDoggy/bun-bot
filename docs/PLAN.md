@@ -20,20 +20,22 @@
 - **完整工具反馈**：不再 4K 截断，文件内容 / 测试输出 / diff 完整回传（默认上限 64KB，可配置）。
 - **长视野任务**：一次会话完成"新增一个工具 + 写文档 + 跑测试 + 收尾"的完整闭环。
 - **跨会话记忆**：状态文件持久化，重启后带着上次的决策继续。
+- **跨会话能力沉淀**：skills 组合操作库把「多步 + 有坑 + 会过时」的操作固化成 SKILL.md，不再依赖 lastSummary 里会丢细节的结论。
 
 ## 2. 目标架构
 
 ```text
 index.ts              入口：CLI 解析 + agent 主循环（保持轻量）
 src/tools.ts          工具定义与执行器（注册表模式，方便自增工具）
-src/context.ts        系统提示词组装：身份 + 项目 + 记忆 + 规则
+src/context.ts        系统提示词组装：身份 + 项目 + 记忆 + 规则 + skills 索引
 src/memory.ts         记忆读写：AGENT_STATE.json / MEMORY.md
 src/budget.ts         上下文 token 预算与超限摘要  ← P2 待建
 src/git.ts            自修改前的安全提交与回滚
+skills/               组合操作库：skills/<name>/SKILL.md + 实现 + 样本 + 自测
 tests/                self-test 用例（agent 修改自身代码后的验证闸门）
 ```
 
-> 当前已落地：index.ts / tools.ts / context.ts / memory.ts / git.ts / tests/（见 [ARCHITECTURE.md](./ARCHITECTURE.md) 快照）。
+> 当前已落地：index.ts / tools.ts / context.ts / memory.ts / git.ts / skills/ / tests/（见 [ARCHITECTURE.md](./ARCHITECTURE.md) 快照）。
 
 ## 3. 分阶段计划
 
@@ -66,7 +68,18 @@ tests/                self-test 用例（agent 修改自身代码后的验证闸
 - [x] 超时可配（`timeoutMs`，默认 30s → 长任务可放开）
 - [x] 输出上限 4000 → 65536，截断处带偏移信息
 
-**验收**：✅ `bun run index.ts "把 index.ts 顶部的注释改成两行"` 真实落盘 + diff 可见 + `bun test` 12 用例全绿。
+**验收**：✅ `bun run index.ts "把 index.ts 顶部的注释改成两行"` 真实落盘 + diff 可见 + `bun test` 15 用例全绿。
+
+### skills · 组合操作库 —— 跨会话能力沉淀 ✅（已完成）
+
+**目标**：把「多步、有坑、会过时」的操作固化成可复用、可自测的 SKILL.md。
+
+- [x] `skills/README.md` 索引（名字 + 一句话 + 自测命令），被 `context.ts` 的 [能力] 区块引用
+- [x] `skills/web-search/`：search.ts（Bing 主路径 + DDG 降级 + 重试）+ self-test.ts（离线样本 + `--online`）+ SKILL.md
+- [x] **不加新工具**：加载用现有 `read_file` 按需读取，保持工具集精简
+- [x] skill 必须带版本号 + 自测命令，纳入测试闸门（`bun test` 含解析器用例）
+
+**验收**：✅ `bun test` 15 用例全绿 + `bun run skills/web-search/self-test.ts --online` 在线实测 Bing 10 条；v1 全局正则解析 0 条的教训永久沉淀进 SKILL.md 踩坑清单。
 
 ### P2 · 长任务与自迭代循环 ⏳（M2 进行中）
 
@@ -95,12 +108,13 @@ tests/                self-test 用例（agent 修改自身代码后的验证闸
 ```text
 [身份]  我是 bun-bot，一个自我认知为 Bun.js 运行时的 agent
 [能力]  工具契约：run_script / read_file / write_file / list_dir / run_bash
+        + skills 索引：web-search 等（细节按需 read_file skills/<name>/SKILL.md）
 [项目]  文件树 + 架构图 + 关键文件位置 + 当前 MODE
 [记忆]  上次任务的决策、踩坑、TODO（来自 AGENT_STATE.json）
 [规则]  改工作区前必须 git 快照；改完必须跑 tests/；工具输出默认完整读取
 ```
 
-> ✅ 已按此结构落地于 `src/context.ts`。
+> ✅ 已按此结构落地于 `src/context.ts`（skills 索引由 `skillsIndex()` 从 `skills/README.md` 提取）。
 
 ## 5. 记忆格式（草案）
 
@@ -126,6 +140,7 @@ tests/                self-test 用例（agent 修改自身代码后的验证闸
 2. 一次会话完成"新增工具 + 文档 + 测试 + 收尾"全流程，无需人工干预。✅（M1 已达成：工具集 + 文档 + 测试 + README 一次闭环）
 3. 重启后能引用上次会话的决策（记忆持久化生效）。✅
 4. 超过 100 轮工具调用的长任务不丢上下文、不爆预算。⏳（P2 的 budget.ts / checkpoint）
+5. 跨会话能力不再只靠 lastSummary：修正过的操作能固化成带自测的 skill。✅（web-search v2 已落地）
 
 ## 7. 风险与对策
 
@@ -133,12 +148,14 @@ tests/                self-test 用例（agent 修改自身代码后的验证闸
 | --- | --- |
 | 1M 也会被长会话填满 | `budget.ts` 摘要压缩，`--resume` 分段续跑 |
 | 自修改破坏源码 | git 快照 + 测试闸门 + 自动 revert |
-| 全量塞文件反而稀释注意力 | 按需 `read_file`，不全量灌入提示词 |
+| 全量塞文件反而稀释注意力 | 按需 `read_file`，不全量灌入提示词（skills 索引同理：提示词只放一层索引） |
 | 工具权限过大 | 沙箱 `cwd` 限制 + 资源上限 + 审计日志 |
+| 固化的知识会过时（HTML 结构变了） | skill 带版本号 + 自测命令（离线样本兜底 + `--online` 实测），纳入测试闸门 |
 
 ## 8. 里程碑
 
 - ✅ **M1**（P0+P1）：agent 认识自己、能改自己的文件 —— 自修改最小闭环成立（2026-08 完成）。
+- ✅ **skills**：组合操作库落地，web-search v2 固化跨会话能力（2026-08 完成）。
 - ⏳ **M2**（P2）：`--self` 能自主完成多步自我迭代任务，带 checkpoint 与续跑。
 - ⏳ **M3**（P3）：加固、回滚、测试，形成可信的自修改循环，可长期自动演进。
 
