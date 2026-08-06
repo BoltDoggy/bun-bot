@@ -26,7 +26,7 @@
 
 ## 测试闸门（改完必须跑）
 
-- `bun test`：76 用例 / 447 expect，零外部依赖 —— 任何代码改动后必须全绿（P4 新增 9 个测试文件：p4-context / p4-config / p4-state-dir / p4-gate / p4-cli / p4-readonly / p4-global / p4-filetree / p4-interactive）
+- `bun test`：76 用例 / 447 expect，零外部依赖 —— 任何代码改动后必须全绿（P4 新增 10 个测试文件：p4-context / p4-config / p4-state-dir / p4-gate / p4-cli / p4-readonly / p4-global / p4-filetree / p4-interactive / p4-bootstrap）
 - `bun run skills/web-search/self-test.ts --online`：web-search skill 在线实测（改了解析逻辑必须跑）
 - 新增能力必须补测试用例：`tests/` 是自我进化的验证闸门
 
@@ -48,6 +48,7 @@
 - **本文件优先**：与 README / docs 冲突时以本文件为准
 - **配置三级**：环境变量 > .bunbot.json > ~/.bun-bot/config.json（P4-3/8），`loadConfig(base)` 统一合并；API key 只做全局 fallback 不进项目配置
 - **通用化原则（P4）**：系统提示词不硬编码 bun-bot 自身文件结构（关键文件按存在性动态生成）；测试闸门多生态探测；状态文件不污染用户仓库
+- **编译产物自举（P4-11）**：`run_script` spawn 自身（`process.execPath`：源码时=bun、编译时=编译产物）；编译产物 `./bun-bot run <script>` 走 index.ts 顶部拦截（API key 检查前）用内嵌运行时执行外部脚本 —— 无 bun 环境的用户机器也能跑 run_script（`bun build --compile` 分发，体积约 60MB+，按平台编译）
 
 ## 踩坑（非显然行为）
 

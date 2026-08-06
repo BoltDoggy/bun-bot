@@ -26,6 +26,7 @@
 - 📝 **审计日志（P3-4）**：每次工具调用入参/出参摘要落盘 `.bunbot/AUDIT.log.jsonl`（gitignore）
 - 🌍 **通用化（P4）**：身份 `AGENT_IDENTITY` 可配置、关键文件按存在性动态生成（任意项目不出现 bun-bot 特有路径）；`.bunbot.json` 项目配置（环境变量 > 配置 > 全局 > 默认）；状态文件移入 `.bunbot/`（自动追加 .gitignore）；CLI `bun-bot init` 一键初始化；全局配置 `~/.bun-bot/config.json`（默认模型 / API key fallback）；文件树感知 .gitignore + 行数预算截断；`--interactive` 多轮 REPL
 - ⚡ **Bun 原生执行**：脚本用 `Bun.spawn` 运行，`run_script` 默认沙箱 tmpdir，可指定工作区 cwd
+- 📦 **编译产物自举**：`bun build --compile` 后 `run_script` spawn 自身（process.execPath），编译产物 `./bun-bot run <script>` 用内嵌运行时执行外部脚本 —— 无 bun 环境的用户机器也能跑 run_script
 
 ## 快速开始
 
@@ -57,7 +58,7 @@ bun-bot "分析这个项目的结构并给出建议"
 
 | 工具 | 说明 |
 | --- | --- |
-| `run_script` | 用 Bun 运行 JS/TS（cwd 可指定工作区，默认 tmpdir；超时可配；输出上限 64KB 带偏移） |
+| `run_script` | 用 Bun 运行 JS/TS（cwd 可指定工作区，默认 tmpdir；超时可配；输出上限 64KB 带偏移；spawn 自身运行时，编译产物无 bun 环境也能跑） |
 | `read_file` | 读工作区文件，默认完整返回 64KB，可 offset 续读（单次硬上限 1MB） |
 | `write_file` | 写工作区文件，自动 git 快照 + diff 摘要（readonly 模式下拒绝） |
 | `list_dir` | 列目录（`-a` 显示隐藏文件、`depth` 限制深度，最大 8） |
@@ -73,7 +74,7 @@ bun-bot "分析这个项目的结构并给出建议"
 ## 项目结构
 
 ```
-├── index.ts            # 入口：CLI 解析（--stream / --self / --resume / --interactive）+ runAgentLoop 主循环 + 记忆读写钩子
+├── index.ts            # 入口：CLI 解析（--stream / --self / --resume / --interactive）+ run 子命令自举（编译产物自带运行时）+ runAgentLoop 主循环 + 记忆读写钩子
 ├── AGENTS.md            # 可选：项目级指令（存在时自动加载，优先级最高）
 ├── bin/
 │   └── bun-bot.ts      # CLI 分发（P4-6）：bun link 全局安装；init / --version / --help / 透传 index.ts

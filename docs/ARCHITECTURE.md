@@ -26,13 +26,14 @@
 | 测试闸门 | ✅ P3-2 已完成：`src/gate.ts`（`runTestGate` / `revertToHead` / `enforceTestGate`）；主循环收尾若本会话发生过自修改（write_file / 写操作 run_bash 的 `gitSnapshot`）自动跑 `bun test`，失败自动回滚到**会话开始前 HEAD**（`git reset --hard` + `git clean -fd`，gitignore 本地状态不丢）并复测确认项目可继续跑 |
 | 沙箱权限分级 | ✅ P3-3 已完成：路径（cwd / path）默认限制工作区内（`BUN_BOT_ALLOW_OUTSIDE_CWD=1` 放行）；`run_bash` 危险命令黑名单（rm -rf /、git push、fork bomb、sudo、设备写入等）直接拒绝；`BUN_BOT_PERMISSIONS=ask` 时写操作命令需确认 |
 | 审计日志 | ✅ P3-4 已完成：`src/audit.ts` —— 每次工具调用入参/出参摘要落盘 `AUDIT.log.jsonl`（gitignore），`appendAudit` 内部防御性截断（400 / 500），`loadAudit` 最新在前 |
+| 编译产物自举 | ✅ 已落地：`run_script` spawn 自身（`process.execPath`：源码时=bun、编译时=编译产物）；入口 `run <script>` 子命令（index.ts 拦截于 API key 检查前）用内嵌运行时执行外部脚本 —— `bun build --compile` 后无 bun 环境也能跑（端到端实测：PATH 仅 /usr/bin:/bin 下 `./bun-bot-demo run <script>` exitCode 0，Bun API / 相对 import / 顶层 await 全可用） |
 | 自测 | 76 用例 / 447 expect，零外部依赖（`bun test`）；web-search 另有 `self-test.ts --online` 在线实测 |
 
 ## 模块解剖
 
 ```text
-index.ts              入口：CLI 解析（--stream / --self / --resume / --interactive）+ runAgentLoop 主循环 + 记忆读写钩子 + 预算检查 + checkpoint + 测试闸门收尾 + 交互模式 REPL
-src/tools.ts          工具注册表：6 个工具的定义与执行器（P4-7 readonly 拒绝 + ask 白名单；permissionMode 接配置）
+index.ts              入口：run 子命令自举（编译产物自带运行时）+ CLI 解析（--stream / --self / --resume / --interactive）+ runAgentLoop 主循环 + 记忆读写钩子 + 预算检查 + checkpoint + 测试闸门收尾 + 交互模式 REPL
+src/tools.ts          工具注册表：6 个工具的定义与执行器（run_script spawn 自身：编译产物自举；P4-7 readonly 拒绝 + ask 白名单；permissionMode 接配置）
 src/config.ts         项目/全局配置（P4-3/8）：loadConfig（环境变量 > .bunbot.json > ~/.bun-bot/config.json > 默认）+ API key fallback
 src/context.ts        系统提示词组装：[身份] [能力] [项目] [记忆] [任务模式] [规则] + skills 索引 + AGENTS.md 约束声明 + contextWarnings 展示
 src/memory.ts         记忆读写（P4-4/9）：状态文件在 .bunbot/（AGENT_STATE / MEMORY / CHECKPOINT，gitignore 自动追加）+ checkpoint 模块 + AGENTS.md + 项目上下文 + 文件树忽略/截断
