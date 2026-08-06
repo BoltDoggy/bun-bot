@@ -3,13 +3,13 @@
  *
  * 结构（§4）：[身份] [能力] [项目] [记忆] [规则]
  * 目标：agent 启动时能准确说出"我是谁、项目结构、上次干了什么、有什么 skills 可用"。
- * 项目级指令：AGENT.md 存在时由 loadProjectContext 加载进 [项目] 区块（最前），
- *             并在 [规则] 中声明其约束力（优先级高于 README / docs）。
+ * 项目级指令：AGENTS.md（兼容旧命名 AGENT.md）存在时由 loadProjectContext 加载进
+ *             [项目] 区块（最前），并在 [规则] 中声明其约束力（优先级高于 README / docs）。
  */
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { AgentState } from "./memory";
-import { workspace, STATE_FILE, MEMORY_FILE, AGENT_FILE } from "./memory";
+import { workspace, STATE_FILE, MEMORY_FILE, AGENTS_FILE, LEGACY_AGENT_FILE } from "./memory";
 
 export interface ContextInput {
   state: AgentState;
@@ -92,7 +92,7 @@ export function buildSystemPrompt(ctx: ContextInput): string {
   b.push(project);
   b.push("");
   b.push("关键文件:");
-  b.push("- " + AGENT_FILE + "         项目级指令（可选，存在时优先级最高，见 [规则]）");
+  b.push("- " + AGENTS_FILE + "        项目级指令（可选，存在时优先级最高，见 [规则]；兼容旧命名 " + LEGACY_AGENT_FILE + "）");
   b.push("- index.ts         入口：CLI 解析 + agent 主循环（保持轻量）");
   b.push("- src/tools.ts     工具注册表（新增工具在此注册）");
   b.push("- src/context.ts   系统提示词组装");
@@ -109,6 +109,6 @@ export function buildSystemPrompt(ctx: ContextInput): string {
   b.push("2. 工具输出默认完整读取，不要假设被截断；大文件用偏移续读。");
   b.push("3. 需要长任务时，给 run_script / run_bash 传更大的 timeoutMs（如 120000），别等超时。");
   b.push("4. 结论用简洁中文总结，说明做了什么、怎么验证的、结果如何。");
-  b.push("5. 若工作区根目录存在 " + AGENT_FILE + "，它是用户与我的项目级契约，约束力高于 [项目] 区块中 README/docs 的描述；内容冲突时以 " + AGENT_FILE + " 为准。");
+  b.push("5. 若工作区根目录存在 " + AGENTS_FILE + "（老项目可能是 " + LEGACY_AGENT_FILE + "，兼容读取），它是用户与我的项目级契约，约束力高于 [项目] 区块中 README/docs 的描述；内容冲突时以 " + AGENTS_FILE + " 为准。");
   return b.join("\n");
 }
