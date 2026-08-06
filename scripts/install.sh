@@ -9,7 +9,7 @@
 #
 # 环境变量（与参数等价，脚本内可覆盖）:
 #   BUN_BOT_REPO        仓库（默认 BoltDoggy/bun-bot，fork 或私有源可覆盖）
-#   BUN_BOT_VERSION     版本号（默认 latest = 最新 Release；指定如 0.1.0 → 下载 v0.1.0）
+#   BUN_BOT_VERSION     版本号（默认 latest = 最新 Release；指定如 0.3.3 → 下载 v0.3.3）
 #   BUN_BOT_INSTALL_DIR 安装目录（默认 ~/.local/bin；/usr/local/bin 可写时用后者）
 #   BUN_BOT_TARGET      目标平台（默认自动检测；测试或手动指定用）
 #   BUN_BOT_BASE_URL    下载源（默认 https://github.com/$REPO/releases；测试可指向本地服务）

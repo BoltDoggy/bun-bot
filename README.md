@@ -29,7 +29,7 @@ curl -fsSL https://raw.githubusercontent.com/BoltDoggy/bun-bot/HEAD/scripts/inst
 powershell -ExecutionPolicy Bypass -c "irm https://raw.githubusercontent.com/BoltDoggy/bun-bot/HEAD/scripts/install.ps1 | iex"
 ```
 
-> 安装脚本可定制：`BUN_BOT_REPO`（fork/私有源）、`BUN_BOT_VERSION`（默认 latest，指定如 0.1.0）、
+> 安装脚本可定制：`BUN_BOT_REPO`（fork/私有源）、`BUN_BOT_VERSION`（默认 latest，指定如 0.3.3）、
 > `--dir` 安装目录等，详见 `scripts/install.sh --help` 与 `scripts/install.ps1 -?`。
 
 **第二步：在任意项目使用（P4）**
