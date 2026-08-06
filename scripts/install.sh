@@ -14,7 +14,8 @@
 #   BUN_BOT_TARGET      目标平台（默认自动检测；测试或手动指定用）
 #   BUN_BOT_BASE_URL    下载源（默认 https://github.com/$REPO/releases；测试可指向本地服务）
 #
-# 行为: 检测平台 → 下载 bun-bot-<target> 与 .sha256 → 校验 → 安装 → 提示 PATH。
+# 行为: 检测平台 → 下载 bun-bot-<target> 与 .sha256 → 校验 → 安装（重命名为 bun-bot，
+# Windows 为 bun-bot.exe，命令统一不带平台后缀）→ 提示 PATH。
 set -eu
 
 REPO="${BUN_BOT_REPO:-BoltDoggy/bun-bot}"
@@ -62,9 +63,13 @@ if [ -z "$TARGET" ]; then
   TARGET="$(detect_target)"
 fi
 
-# Windows 产物带 .exe 后缀
+# Release 资产名（下载用）: bun-bot-<target>，Windows 带 .exe
 FILE="bun-bot-${TARGET}"
 case "$TARGET" in windows*) FILE="${FILE}.exe";; esac
+
+# 安装后的命令名（用户 PATH 里的统一命令，不带平台后缀）: bun-bot / bun-bot.exe
+BIN="bun-bot"
+case "$TARGET" in windows*) BIN="bun-bot.exe";; esac
 
 # ---------- 下载（curl 优先，wget 兜底） ----------
 download() {
@@ -127,9 +132,11 @@ else
   echo "警告：无法下载 SHA256 校验文件，跳过完整性校验（URL: $SUM_URL）" >&2
 fi
 
-# 安装（保留可执行位；Windows .exe 无需 chmod，install -m 不影响）
-install -m 0755 "$TMP/$FILE" "$INSTALL_DIR/$FILE"
-echo "[install] 已安装: $INSTALL_DIR/$FILE"
+# 安装为统一命令名 bun-bot（Windows: bun-bot.exe），不暴露平台后缀；
+# 同时清理旧版安装脚本残留的平台名文件（bun-bot-<target>）。
+rm -f "$INSTALL_DIR/$FILE"
+install -m 0755 "$TMP/$FILE" "$INSTALL_DIR/$BIN"
+echo "[install] 已安装: $INSTALL_DIR/$BIN"
 
 # PATH 提示（已在 PATH 中则跳过）
 case ":$PATH:" in
@@ -140,5 +147,5 @@ case ":$PATH:" in
     ;;
 esac
 
-echo "下一步：设置环境变量 DEEPSEEK_API_KEY 后运行：${FILE} \"你的任务\""
-echo "版本确认：${FILE} --version"
+echo "下一步：设置环境变量 DEEPSEEK_API_KEY 后运行：bun-bot \"你的任务\""
+echo "版本确认：bun-bot --version"
