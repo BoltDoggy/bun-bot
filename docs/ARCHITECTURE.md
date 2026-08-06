@@ -6,8 +6,8 @@
 
 | 项 | 值 |
 | --- | --- |
-| index.ts | 163 行 / 5.6 KB（入口：CLI 解析 + agent 主循环，保持轻量） |
-| src/ | tools.ts 330 行 / 14.8 KB · context.ts 85 行 / 6.3 KB · memory.ts 199 行 / 6.8 KB · git.ts 42 行 / 1.4 KB |
+| index.ts | 162 行 / 5.1 KB（入口：CLI 解析 + agent 主循环，保持轻量） |
+| src/ | tools.ts 353 行 / 12.5 KB · context.ts 116 行 / 4.6 KB · memory.ts 217 行 / 6.0 KB · git.ts 41 行 / 1.2 KB |
 | 工具数量 | 5 个：`run_script` / `read_file` / `write_file` / `list_dir` / `run_bash`（skills 不加新工具） |
 | 工具描述 ACI 化 | ✅ P2-1 已完成：5 个工具 `description` 均带「示例：」JSON 参数形态的 example usage，参数语义同步打磨；系统提示词 [能力] 区块带极简 few-shot（双保险） |
 | 项目级指令 | `AGENTS.md`（可选）：存在时由 `loadProjectContext` 加载进 [项目] 区块最前，[规则] 第 5 条声明其约束力（优先级高于 README/docs）；不存在时静默跳过 |
