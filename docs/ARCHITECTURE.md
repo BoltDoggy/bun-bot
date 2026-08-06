@@ -9,7 +9,7 @@
 | index.ts | 163 行 / 5.6 KB（入口：CLI 解析 + agent 主循环，保持轻量） |
 | src/ | tools.ts 336 行 / 12.8 KB · context.ts 116 行 / 5.6 KB · memory.ts 199 行 / 6.8 KB · git.ts 42 行 / 1.4 KB |
 | 工具数量 | 5 个：`run_script` / `read_file` / `write_file` / `list_dir` / `run_bash`（skills 不加新工具） |
-| 项目级指令 | `AGENTS.md`（可选）：存在时由 `loadProjectContext` 加载进 [项目] 区块最前，[规则] 第 5 条声明其约束力（优先级高于 README/docs）；兼容旧命名 `AGENT.md`；不存在时静默跳过 |
+| 项目级指令 | `AGENTS.md`（可选）：存在时由 `loadProjectContext` 加载进 [项目] 区块最前，[规则] 第 5 条声明其约束力（优先级高于 README/docs）；不存在时静默跳过 |
 | skills | 1 个：`web-search` v2（search.ts / self-test.ts / samples/），索引进 [能力] 区块，细节按需 read_file |
 | 模型 | `deepseek-v4-flash`（`BUN_BOT_MODEL` 可换，如 `deepseek-v4-pro`） |
 | 最大迭代 | 150 轮（`BUN_BOT_MAX_ITERATIONS` 可调） |
@@ -46,7 +46,7 @@ tests/tools.test.ts   self-test 用例（agent 修改自身代码后的验证闸
 
 | 行为 | 说明 |
 | --- | --- |
-| 加载时机 | `loadProjectContext()` 读取工作区根 `AGENTS.md`，缺失时回退旧命名 `AGENT.md`（`readAgentDirective()`），存在则置于项目认知最前 |
+| 加载时机 | `loadProjectContext()` 读取工作区根 `AGENTS.md`（`readAgentDirective()`），存在则置于项目认知最前 |
 | 优先级 | 高于 README / docs：它是用户与 agent 之间的项目级契约 |
 | 约束声明 | `buildSystemPrompt` 的 [规则] 第 5 条：内容冲突时以 AGENTS.md 为准 |
 | 上限 | 8000 字符截断提示（与 README 同级），需完整内容可 read_file |
