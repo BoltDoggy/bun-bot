@@ -124,19 +124,20 @@ bun-bot "分析这个项目的结构并给出建议"
 ### 项目结构
 
 ```
-├── index.ts            # 入口：CLI 解析（--stream / --self / --resume / --interactive）+ run 子命令自举（编译产物自带运行时）+ runAgentLoop 主循环 + 记忆读写钩子
+├── index.ts            # 入口：CLI 命令拦截（init / --version / --help，API key 检查前）+ CLI 解析（--stream / --self / --resume / --interactive）+ run 子命令自举（编译产物自带运行时）+ runAgentLoop 主循环 + 记忆读写钩子
 ├── AGENTS.md            # 可选：项目级指令（存在时自动加载，优先级最高）
 ├── .github/
 │   └── workflows/
 │       └── build.yml   # P5 全平台构建：矩阵 6 平台（tag v* 发布 Release + 手动触发出 artifact）
 ├── bin/
-│   └── bun-bot.ts      # CLI 分发（P4-6）：bun link 全局安装；init / --version / --help / 透传 index.ts
+│   └── bun-bot.ts      # CLI 分发（P4-6）：复用 src/cli.ts（init / --version / --help），透传 index.ts；bun link 全局安装
 ├── scripts/
 │   ├── build.sh        # 构建编译产物（本地与 CI 共用：先测试后编译 + SHA256 校验文件）
 │   ├── install.sh      # 用户安装脚本（macOS/Linux：检测平台 → 下载 → 校验 → 安装 → PATH 提示）
 │   └── install.ps1     # 用户安装脚本（Windows：下载 .exe → 校验 → 装到 %LOCALAPPDATA% → 加用户 PATH）
 ├── src/
 │   ├── tools.ts        # 工具注册表（新增工具在此注册；description 带 example usage；P4-7 readonly/ask 白名单）
+│   ├── cli.ts          # CLI 命令（P4-6：init / --version / --help，bin/bun-bot.ts 与 index.ts 编译产物共用）
 │   ├── context.ts      # 系统提示词组装（P4-2：身份可配置 + 关键文件按存在性动态生成）
 │   ├── config.ts       # 项目配置 .bunbot.json + 全局配置 ~/.bun-bot/（P4-3/8：环境变量 > 项目 > 全局 > 默认）
 │   ├── memory.ts       # 记忆读写（P4-4：状态移入 .bunbot/ + 自动 .gitignore；P4-9：文件树忽略/截断）
