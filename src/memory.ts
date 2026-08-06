@@ -20,6 +20,9 @@
  * P4-9 大项目上下文加载：buildFileTree 感知 .gitignore（+ 扩展忽略 vendor/target/
  *               __pycache__/.venv 等）+ 行数预算化截断（超限提示按需 list_dir）——
  *               大 monorepo / 大依赖目录不会撑爆系统提示词。
+ * P6-4 记忆防膨胀（吸收 research 分支理念）：decisions / pitfalls / todo 数组各设上限
+ *               MAX_MEMORY_ITEMS（默认 30）条，超出丢最旧 —— load/save/sync 三路径生效，
+ *               避免跨会话记忆无限膨胀撑爆 [记忆] 区块。
  * P6-2 项目级指令拆分（吸收 research 分支理念）：AGENTS.md 精简为通用项目契约，
  *               bun-bot 自研细节（运行/构建、可调变量、测试闸门、架构决策、踩坑）拆入
  *               BUN_BOT.md —— 两者由 readAgentDirective 一并加载（[项目] 区块，优先级最高）。
@@ -138,6 +141,26 @@ export interface AgentState {
   activePlan?: ActivePlan;   // 当前任务计划（P2-2 任务模式）
 }
 
+/** 记忆数组上限（P6-4 防膨胀：decisions / pitfalls / todo 各保留最近 N 条，超出丢最旧） */
+export const MAX_MEMORY_ITEMS = 30;
+
+/**
+ * 截断记忆数组到上限（P6-4）：decisions / pitfalls / todo 各保留最近 MAX_MEMORY_ITEMS 条
+ * （slice(-N) 保留尾部，即丢最旧）。直接修改并返回传入对象，调用方无需处理返回值。
+ */
+export function capMemoryArrays(state: AgentState): AgentState {
+  if (state.decisions.length > MAX_MEMORY_ITEMS) {
+    state.decisions = state.decisions.slice(-MAX_MEMORY_ITEMS);
+  }
+  if (state.pitfalls.length > MAX_MEMORY_ITEMS) {
+    state.pitfalls = state.pitfalls.slice(-MAX_MEMORY_ITEMS);
+  }
+  if (state.todo.length > MAX_MEMORY_ITEMS) {
+    state.todo = state.todo.slice(-MAX_MEMORY_ITEMS);
+  }
+  return state;
+}
+
 export const DEFAULT_STATE: AgentState = {
   version: 1,
   lastTask: "",
@@ -155,7 +178,9 @@ function readStateAt(p: string): AgentState | null {
   try {
     if (existsSync(p)) {
       const raw = JSON.parse(readFileSync(p, "utf8")) as Partial<AgentState>;
-      return { ...DEFAULT_STATE, ...raw };
+      const s = { ...DEFAULT_STATE, ...raw } as AgentState;
+      // P6-4：读入即截断（防御历史遗留的超长记忆数组）
+      return capMemoryArrays(s);
     }
   } catch (e) {
     console.error("[memory] 读取 " + p + " 失败，使用默认态: " + e);
@@ -172,6 +197,8 @@ export function loadState(): AgentState {
 
 /** 写回 AGENT_STATE.json（写前确保目录存在 + .gitignore 忽略） */
 export function saveState(state: AgentState): void {
+  // P6-4：写盘前截断记忆数组（防膨胀）
+  capMemoryArrays(state);
   ensureStateDir();
   ensureStateIgnored();
   writeFileSync(statePath(), JSON.stringify(state, null, 2) + "\n", "utf8");
@@ -179,6 +206,8 @@ export function saveState(state: AgentState): void {
 
 /** 由 AGENT_STATE.json 同步生成人类可读的 MEMORY.md */
 export function syncMemoryFile(state: AgentState): void {
+  // P6-4：同步前截断记忆数组（防膨胀，与 saveState 双保险）
+  capMemoryArrays(state);
   const b: string[] = [];
   b.push("# agent 记忆（人类可读版）");
   b.push("");

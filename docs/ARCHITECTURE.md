@@ -6,7 +6,7 @@
 
 | 项 | 值 |
 | --- | --- |
-| index.ts | 341 行 / 16.3 KB（入口：CLI 命令拦截（init / --version / --help，API key 检查前）+ CLI 解析（默认 SSE 流式、--no-stream 关闭 / --self / --resume / --interactive）+ runAgentLoop 主循环 + 记忆读写钩子 + P2-3 预算检查 + P2-4 checkpoint + P3-2 测试闸门收尾 + P3-4 审计日志钩子 + P4-10 交互模式 REPL） |
+| index.ts | 342 行 / 16.4 KB（入口：CLI 命令拦截（init / --version / --help，API key 检查前）+ CLI 解析（默认 SSE 流式、--no-stream 关闭 / --self / --resume / --interactive）+ runAgentLoop 主循环 + 记忆读写钩子 + P2-3 预算检查 + P2-4 checkpoint + P3-2 测试闸门收尾 + P3-4 审计日志钩子 + P4-10 交互模式 REPL） |
 | src/ | tools.ts 547 行 / 26 KB · memory.ts 447 行 / 13.3 KB（含 checkpoint + P4-4/9）· context.ts 189 行 / 11.7 KB（P4-2）· config.ts 137 行 / 5.8 KB（P4-3/8）· gate.ts 190 行 / 8.4 KB（P4-5）· budget.ts 103 行 / 3.9 KB · git.ts 69 行 / 2.7 KB · audit.ts 76 行 / 2.6 KB（P4-4）· interactive.ts 55 行 / 2.3 KB（P4-10）· cli.ts 80 行 / 4.1 KB（P4-6 CLI：init / --version / --help）· bin/bun-bot.ts 33 行 / 1.3 KB（复用 cli.ts，bun link 分发） |
 | release（P5） | `.github/workflows/build.yml`（98 行：矩阵 6 平台构建 + 独立 release job 统一发布 + 手动 artifact）· scripts/build.sh（59 行：本地/CI 共用构建）· scripts/install.sh（145 行：POSIX 安装脚本）· scripts/install.ps1（73 行：Windows 安装脚本） |
 | 工具数量 | 6 个：`run_script` / `read_file` / `write_file` / `list_dir` / `run_bash` / `update_plan`（skills 不加新工具） |
@@ -15,7 +15,7 @@
 | 上下文预算 | ✅ P2-3 已完成：`budget.ts`（`estimateTokens` 中英混合离线估算 / `estimateMessagesTokens` / `compressContext` 最轻档 tool result clearing）；主循环每轮检查预算，超限压缩最早 tool 结果（保留前缀 + 清理标记，消息结构不动）；告警写回 `AgentState.contextWarnings`（[记忆] 区块 + MEMORY.md「上下文预算告警」区块可见） |
 | checkpoint | ✅ P2-4 已完成：`--resume` 会话级断点续跑 —— `AGENT_CHECKPOINT.json` 持久化当前会话消息历史（不含 system，恢复时重建），每次消息变更落盘；中断（Ctrl+C / 超迭代 / 崩溃）后 `--resume` 恢复完整上下文继续；任务正常完成自动清除 |
 | 项目级指令 | `AGENTS.md`（通用契约）+ `BUN_BOT.md`（实现细节，P6-2）（均可选）：由 `readAgentDirective` 一并加载进 [项目] 区块最前，[规则] 第 5 条声明其约束力（优先级高于 README/docs）；不存在时静默跳过 |
-| skills | 1 个：`web-search` v2（search.ts / self-test.ts / samples/），索引进 [能力] 区块，细节按需 read_file |
+| skills | 1 个内置：`web-search` v2（search.ts / self-test.ts / samples/），索引进 [能力] 区块，细节按需 read_file；P6-3 生态对齐：支持 `.agents/skills/`（frontmatter 自描述）双目录兼容，skillsDir 可配置 |
 | 模型 | `deepseek-v4-flash`（`BUN_BOT_MODEL` 可换，如 `deepseek-v4-pro`） |
 | 最大迭代 | 150 轮（`BUN_BOT_MAX_ITERATIONS` 可调） |
 | 脚本超时 | 默认 30s（`DEFAULT_TIMEOUT_MS`），`timeoutMs` 可放开长任务 |
