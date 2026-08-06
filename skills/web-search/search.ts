@@ -26,7 +26,7 @@ const UA =
 
 /** 解码 HTML 实体（&amp; &lt; &#0183; &ensp; 等） */
 export function decodeEntities(s: string): string {
-  return s.replace(/&(#x[\da-f]+|#\d+|amp|lt|gt|quot|apos|nbsp|ensp|middot);/gi, (m, e) => {
+  return s.replace(/&(#x[\da-f]+|#\d+|amp|lt|gt|quot|apos|nbsp|ensp|emsp|middot);/gi, (m, e) => {
     const lower = e.toLowerCase();
     if (lower.startsWith("#x")) return String.fromCodePoint(parseInt(lower.slice(2), 16));
     if (lower.startsWith("#")) {
@@ -78,11 +78,11 @@ export function parseBingHtml(html: string): SearchResult[] {
 /** 解析 DuckDuckGo html 版结果（降级用） */
 export function parseDdgHtml(html: string): SearchResult[] {
   const out: SearchResult[] = [];
-  const titleRe = /<a[^>]*class="[^"]*result__a[^"]*"[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/g;
   const snippets: string[] = [];
   const snipRe = /class="result__snippet"[^>]*>([\s\S]*?)<\/a>/g;
   let s: RegExpExecArray | null;
   while ((s = snipRe.exec(html)) !== null) snippets.push(decodeEntities(stripTags(s[1])));
+  const titleRe = /<a[^>]*class="[^"]*result__a[^"]*"[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/g;
   let m: RegExpExecArray | null;
   let i = 0;
   while ((m = titleRe.exec(html)) !== null) {
@@ -99,15 +99,31 @@ export function parseDdgHtml(html: string): SearchResult[] {
   return out;
 }
 
-/** 单次请求抓取搜索页 HTML */
-async function fetchHtml(url: string, timeoutMs: number): Promise<string> {
-  const res = await fetch(url, {
-    headers: { "User-Agent": UA, "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8" },
-    redirect: "follow",
-    signal: AbortSignal.timeout(timeoutMs),
-  });
-  if (!res.ok) throw new Error("HTTP " + res.status);
-  return res.text();
+/**
+ * 单次请求抓取搜索页 HTML。带重试：
+ * - 网络错误 / 非 2xx → 重试
+ * - DDG 反爬会间歇返回 202 挑战页或 0 结果页 → status 202 视为失败重试
+ */
+async function fetchHtml(url: string, timeoutMs: number, retries = 2): Promise<string> {
+  let lastErr: unknown;
+  for (let i = 0; i <= retries; i++) {
+    try {
+      const res = await fetch(url, {
+        headers: { "User-Agent": UA, "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8" },
+        redirect: "follow",
+        signal: AbortSignal.timeout(timeoutMs),
+      });
+      if (res.status === 202) throw new Error("HTTP 202（疑似 DDG 反爬挑战页）");
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      const html = await res.text();
+      if (html.length < 2000) throw new Error("响应过短（" + html.length + " 字符，疑似反爬页）");
+      return html;
+    } catch (e) {
+      lastErr = e;
+      if (i < retries) await new Promise((r) => setTimeout(r, 2000 * (i + 1)));
+    }
+  }
+  throw lastErr;
 }
 
 /** 主路径：cn.bing.com（会被重定向，UA 必须带上） */
@@ -118,11 +134,22 @@ async function tryBing(query: string, timeoutMs: number): Promise<SearchOutcome>
   return { engine: "bing", results };
 }
 
-/** 降级路径：DuckDuckGo html 版（bing 解析 0 条或请求失败时用） */
+/** 降级路径：DuckDuckGo html 版（bing 解析 0 条或请求失败时用；不稳定，内部再兜一轮） */
 async function tryDdg(query: string, timeoutMs: number): Promise<SearchOutcome> {
-  const url = "https://html.duckduckgo.com/html/?q=" + encodeURIComponent(query);
-  const html = await fetchHtml(url, timeoutMs);
-  const results = parseDdgHtml(html);
+  let results: SearchResult[] = [];
+  let lastError = "";
+  for (let attempt = 0; attempt < 2 && results.length === 0; attempt++) {
+    if (attempt > 0) await new Promise((r) => setTimeout(r, 3000));
+    try {
+      const url = "https://html.duckduckgo.com/html/?q=" + encodeURIComponent(query);
+      const html = await fetchHtml(url, timeoutMs, 1);
+      results = parseDdgHtml(html);
+      if (results.length === 0) lastError = "ddg 返回 0 条";
+    } catch (e) {
+      lastError = "ddg 请求失败: " + (e instanceof Error ? e.message : String(e));
+    }
+  }
+  if (results.length === 0 && lastError) throw new Error(lastError);
   return { engine: "ddg", results };
 }
 
