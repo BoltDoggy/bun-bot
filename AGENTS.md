@@ -5,6 +5,7 @@
 > 改动本文件涉及行为变更时，同步更新 README / docs / tests 并跑 `bun test`。
 > 2026-08 修订：P2-2 任务模式（--self）+ P2-3 上下文预算 + P2-4 checkpoint（--resume）+ P3 质量与防护（git 安全阀补 run_bash / 测试闸门自动回滚 / 沙箱权限分级 / 审计日志）落地后，同步入口 / 可调变量 / 测试数字。
 > 2026-08 再修订：**P4 通用化落地** —— bun-bot 可在任意项目使用：身份/关键文件去专用化（context.ts）、.bunbot.json 项目配置 + ~/.bun-bot/ 全局配置（config.ts）、状态文件移入 .bunbot/（不污染 git）、多生态测试闸门（gate.ts）、CLI bin + init（bin/bun-bot.ts）、readonly/ask 白名单、大项目文件树忽略/截断、交互模式（--interactive）。本文件已同步入口 / 可调变量 / 测试数字。
+> 2026-08 三修订：**旧设计兼容清理** —— memory.ts 移除旧位置（项目根）状态文件兼容读取（loadState / loadCheckpoint 不再 fallback 工作区根）、根目录旧状态文件与 .gitignore 旧条目已删、docs/PLAN.md（P0-P4 全部完成的历史计划）归档删除。本文件已同步测试数字（73 用例 / 438 expect）与 docs 描述。
 
 ## 运行与构建
 
@@ -25,7 +26,7 @@
 
 ## 测试闸门（改完必须跑）
 
-- `bun test`：74 用例 / 441 expect，零外部依赖 —— 任何代码改动后必须全绿（P4 新增 9 个测试文件：p4-context / p4-config / p4-state-dir / p4-gate / p4-cli / p4-readonly / p4-global / p4-filetree / p4-interactive）
+- `bun test`：73 用例 / 438 expect，零外部依赖 —— 任何代码改动后必须全绿（P4 新增 9 个测试文件：p4-context / p4-config / p4-state-dir / p4-gate / p4-cli / p4-readonly / p4-global / p4-filetree / p4-interactive）
 - `bun run skills/web-search/self-test.ts --online`：web-search skill 在线实测（改了解析逻辑必须跑）
 - 新增能力必须补测试用例：`tests/` 是自我进化的验证闸门
 
@@ -43,7 +44,7 @@
 - **记忆不提交**：状态文件（`AGENT_STATE.json` / `MEMORY.md` / `AGENT_CHECKPOINT.json` / `AUDIT.log.jsonl`）在 `.bunbot/` 目录（P4-4，gitignore），仅本地持久化；不要 `git add -f` 它们；`saveState` / `syncMemoryFile` / `saveCheckpoint` / `appendAudit` 写前自动确保目录存在 + .gitignore 幂等追加（`ensureStateIgnored`）
 - **写文件前自动快照**：`write_file` 落盘前自动 `git add -A && commit`，所有修改可回溯（P3-1 后 run_bash 写操作命令前也 snapshotIfDirty）
 - **learn/ 只读**：理论地基（5 篇一手材料 + 结构化笔记），不预载进上下文、不修改，仅按需参考
-- **docs/ 面向自我迭代**：PLAN（路线图）/ ARCHITECTURE（as-is 现状）/ README（索引），代码改动后按需同步
+- **docs/ 面向自我迭代**：ARCHITECTURE（as-is 现状）/ README（索引 + 里程碑进度），代码改动后按需同步
 - **本文件优先**：与 README / docs 冲突时以本文件为准
 - **配置三级**：环境变量 > .bunbot.json > ~/.bun-bot/config.json（P4-3/8），`loadConfig(base)` 统一合并；API key 只做全局 fallback 不进项目配置
 - **通用化原则（P4）**：系统提示词不硬编码 bun-bot 自身文件结构（关键文件按存在性动态生成）；测试闸门多生态探测；状态文件不污染用户仓库
