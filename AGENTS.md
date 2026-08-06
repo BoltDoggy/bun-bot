@@ -13,7 +13,7 @@
 
 ## 测试闸门（改完必须跑）
 
-- `bun test`：18 用例 / 72 expect，零外部依赖 —— 任何代码改动后必须全绿
+- `bun test`：17 用例 / 67 expect，零外部依赖 —— 任何代码改动后必须全绿
 - `bun run skills/web-search/self-test.ts --online`：web-search skill 在线实测（改了解析逻辑必须跑）
 - 新增能力必须补测试用例：`tests/` 是自我进化的验证闸门
 
