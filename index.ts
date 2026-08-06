@@ -1,5 +1,5 @@
-// bun-bot — 自我认知为 Bun.js 运行时的 agent。M1（P0+P1）：认识自己、能改自己 —— 自修改最小闭环成立（P0: AGENT_STATE.json / MEMORY.md 记忆；P1: run_script + read/write/list/bash 工具集）。
-// 用法: bun run index.ts [--stream] "你的任务"（--stream 走 SSE 流式）
+// bun-bot — 自我认知为 Bun.js 运行时的 agent。M1（P0+P1）：认识自己、能改自己 —— 自修改最小闭环成立（P0: AGENT_STATE.json / MEMORY.md 记忆；P1: run_script + read/write/list/bash 工具集）。P2-2 任务模式：--self 先 plan 后执行、逐项勾选、进度写回状态可续跑。
+// 用法: bun run index.ts [--stream] [--self] "你的任务"（--stream 走 SSE 流式；--self 开任务模式）
 import { existsSync } from "node:fs";
 import {
   workspace,
@@ -25,9 +25,10 @@ const MAX_ITERATIONS = Number(process.env.BUN_BOT_MAX_ITERATIONS || 150);
 // ---------- 命令行解析 ----------
 const args = process.argv.slice(2);
 const STREAM = args.includes("--stream");
+const SELF_MODE = args.includes("--self");
 const task = args.filter((a) => !a.startsWith("--")).join(" ");
 if (!task) {
-  console.error('用法: bun run index.ts [--stream] "你的任务"');
+  console.error('用法: bun run index.ts [--stream] [--self] "你的任务"');
   process.exit(1);
 }
 
@@ -120,12 +121,16 @@ if (!existsSync(statePath())) {
 
 const project = loadProjectContext();
 const messages: ChatMessage[] = [
-  { role: "system", content: buildSystemPrompt({ state, project }) },
+  { role: "system", content: buildSystemPrompt({ state, project, selfMode: SELF_MODE }) },
   { role: "user", content: task },
 ];
 
 console.error("[bun-bot] 工作区: " + workspace());
-console.error("[bun-bot] 模型: " + MODEL + " | 流式: " + STREAM);
+console.error("[bun-bot] 模型: " + MODEL + " | 流式: " + STREAM + " | 任务模式: " + SELF_MODE);
+// P2-2：任务模式下检测到上次未完成计划 → 提示续跑（[记忆] 区块已展示进度）
+if (SELF_MODE && state.activePlan && state.activePlan.status === "active") {
+  console.error("[bun-bot] 任务模式：检测到未完成计划「" + state.activePlan.title + "」，从上次断点继续（见 [记忆] 当前任务计划）");
+}
 
 // ---------- Agent 主循环 ----------
 for (let i = 0; i < MAX_ITERATIONS; i++) {
@@ -135,11 +140,14 @@ for (let i = 0; i < MAX_ITERATIONS; i++) {
   if (!message.tool_calls?.length) {
     // 没有工具调用，任务完成：写回记忆后退出
     if (!STREAM) console.log(message.content ?? "");
-    state.lastTask = task;
-    state.lastSummary = message.content ?? "";
-    state.lastRunAt = new Date().toISOString();
-    saveState(state);
-    syncMemoryFile(state);
+    // 重新加载再写回：update_plan 可能已在会话中改过 activePlan，
+    // 用旧 state 引用覆盖会把进度冲掉（防覆盖）
+    const fresh = loadState();
+    fresh.lastTask = task;
+    fresh.lastSummary = message.content ?? "";
+    fresh.lastRunAt = new Date().toISOString();
+    saveState(fresh);
+    syncMemoryFile(fresh);
     process.exit(0);
   }
 
