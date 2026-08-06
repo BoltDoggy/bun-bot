@@ -7,6 +7,7 @@
 **M2 完成（P2-1 ~ P2-4）**：工具描述 ACI 化 + 任务模式（`--self`）+ 上下文预算（tool result clearing）+ `--resume` checkpoint —— 长任务「不爆预算、不丢上下文、中断可续跑」闭环成立。
 **M3 完成（P3）**：git 安全阀补 `run_bash` + 测试闸门（收尾自动跑测试、失败自动回滚）+ 沙箱权限分级 + 审计日志 —— 自修改「可信、可回滚、不跑飞」闭环成立。
 **M4 完成（P4 通用化）**：可在**任意项目**使用 —— 身份/项目认知去专用化 + `.bunbot.json` 项目配置 + 状态文件移入 `.bunbot/`（不污染 git）+ 多生态测试闸门 + CLI 分发与 `init` + 只读模式 + 全局配置 + 大项目文件树 + 交互模式。
+**M5 完成（P5 全平台分发）**：GitHub Actions 多平台矩阵构建（linux / darwin / windows × x64 / arm64 共 6 平台）+ 用户安装脚本（`install.sh` / `install.ps1`：下载 → SHA256 校验 → 安装 → 加入 PATH）—— 打 tag 自动发布 Release，**无 bun 环境也能一键安装使用**。
 
 ## 特性
 
@@ -27,6 +28,7 @@
 - 🌍 **通用化（P4）**：身份 `AGENT_IDENTITY` 可配置、关键文件按存在性动态生成（任意项目不出现 bun-bot 特有路径）；`.bunbot.json` 项目配置（环境变量 > 配置 > 全局 > 默认）；状态文件移入 `.bunbot/`（自动追加 .gitignore）；CLI `bun-bot init` 一键初始化；全局配置 `~/.bun-bot/config.json`（默认模型 / API key fallback）；文件树感知 .gitignore + 行数预算截断；`--interactive` 多轮 REPL
 - ⚡ **Bun 原生执行**：脚本用 `Bun.spawn` 运行，`run_script` 默认沙箱 tmpdir，可指定工作区 cwd
 - 📦 **编译产物自举**：`bun build --compile` 后 `run_script` spawn 自身（process.execPath），编译产物 `./bun-bot run <script>` 用内嵌运行时执行外部脚本 —— 无 bun 环境的用户机器也能跑 run_script
+- 🚀 **全平台分发（P5）**：`.github/workflows/build.yml` 原生矩阵构建 6 平台（linux/darwin/windows × x64/arm64）编译产物 —— 打 tag `v*` 自动发布 GitHub Release（每个产物附 `.sha256` 校验文件），手动触发只出 artifact 不发 Release；`scripts/install.sh`（macOS/Linux）与 `scripts/install.ps1`（Windows）一行安装：自动检测平台 → 下载 → SHA256 校验 → 安装 → 提示/加入 PATH；`scripts/build.sh` 本地与 CI 共用（先测试后编译）
 
 ## 快速开始
 
@@ -38,6 +40,29 @@ bun run index.ts --stream "计算斐波那契数列第 30 项"   # SSE 流式输
 bun run index.ts --self "给我加一个 read_file 工具并补文档"  # 任务模式：先 plan 后执行、逐项勾选、中断可续跑
 bun run index.ts --resume                             # 从上次断点续跑（中断后恢复消息历史；可带新任务追加）
 bun run index.ts --interactive                        # 交互模式：多轮 REPL，对话跨轮保持
+```
+
+**直接安装编译产物（无需 bun 环境，P5）**：
+
+```bash
+# macOS / Linux（一行安装：自动检测平台，下载最新 Release → SHA256 校验 → 装到 ~/.local/bin）
+curl -fsSL https://raw.githubusercontent.com/BoltDoggy/bun-bot/HEAD/scripts/install.sh | sh
+
+# Windows（PowerShell：下载 .exe → SHA256 校验 → 装到 %LOCALAPPDATA%\bun-bot\bin → 加入用户 PATH）
+powershell -ExecutionPolicy Bypass -c "irm https://raw.githubusercontent.com/BoltDoggy/bun-bot/HEAD/scripts/install.ps1 | iex"
+```
+
+> 安装脚本可定制：`BUN_BOT_REPO`（fork/私有源）、`BUN_BOT_VERSION`（默认 latest，指定如 0.1.0）、
+> `--dir` 安装目录等，详见 `scripts/install.sh --help` 与 `scripts/install.ps1 -?`。
+
+**构建与发布（P5）**：
+
+```bash
+# 打 tag 自动构建 6 平台并发布 GitHub Release（.github/workflows/build.yml）；也可 Actions 页面手动触发
+git tag v0.1.0 && git push origin v0.1.0
+
+# 本地构建当前平台（脚本与 CI 共用）：产物 dist/bun-bot-<target>[.exe] + .sha256
+bash scripts/build.sh
 ```
 
 **在任意项目使用（P4）**：
@@ -76,8 +101,15 @@ bun-bot "分析这个项目的结构并给出建议"
 ```
 ├── index.ts            # 入口：CLI 解析（--stream / --self / --resume / --interactive）+ run 子命令自举（编译产物自带运行时）+ runAgentLoop 主循环 + 记忆读写钩子
 ├── AGENTS.md            # 可选：项目级指令（存在时自动加载，优先级最高）
+├── .github/
+│   └── workflows/
+│       └── build.yml   # P5 全平台构建：矩阵 6 平台（tag v* 发布 Release + 手动触发出 artifact）
 ├── bin/
 │   └── bun-bot.ts      # CLI 分发（P4-6）：bun link 全局安装；init / --version / --help / 透传 index.ts
+├── scripts/
+│   ├── build.sh        # 构建编译产物（本地与 CI 共用：先测试后编译 + SHA256 校验文件）
+│   ├── install.sh      # 用户安装脚本（macOS/Linux：检测平台 → 下载 → 校验 → 安装 → PATH 提示）
+│   └── install.ps1     # 用户安装脚本（Windows：下载 .exe → 校验 → 装到 %LOCALAPPDATA% → 加用户 PATH）
 ├── src/
 │   ├── tools.ts        # 工具注册表（新增工具在此注册；description 带 example usage；P4-7 readonly/ask 白名单）
 │   ├── context.ts      # 系统提示词组装（P4-2：身份可配置 + 关键文件按存在性动态生成）
@@ -89,7 +121,7 @@ bun-bot "分析这个项目的结构并给出建议"
 │   ├── git.ts          # git 安全快照（write_file + run_bash 写操作前）
 │   └── audit.ts        # 审计日志（落盘 .bunbot/AUDIT.log.jsonl）
 ├── skills/             # 组合操作库（SKILL.md + 实现 + 自测）
-├── tests/              # 76 用例 / 447 expect（M1 + skills + AGENTS.md + P2 + P3 + P4 全量闸门）
+├── tests/              # 85 用例 / 490 expect（M1 + skills + AGENTS.md + P2 + P3 + P4 + P5 全量闸门）
 ├── .bunbot/            # 状态目录（P4-4：AGENT_STATE / MEMORY / CHECKPOINT / AUDIT，gitignore，本地持久化）
 ├── blog.md             # agent 真实运行实录（自我进化过程）
 └── docs/               # 迭代进度与架构文档
@@ -114,13 +146,16 @@ bun-bot "分析这个项目的结构并给出建议"
 | `ignore` | `[]` | 文件树额外忽略规则（P4-9，如 vendor/target/__pycache__） |
 | `allowCommands` | `[]` | ask 模式白名单命令（P4-7：整命令或前缀匹配，命中放行） |
 
+> 安装脚本（P5）另有环境变量：`BUN_BOT_REPO`（默认 `BoltDoggy/bun-bot`）、`BUN_BOT_VERSION`（默认 `latest`）、
+> `BUN_BOT_INSTALL_DIR`、`BUN_BOT_TARGET`、`BUN_BOT_BASE_URL`（测试用），详见 `scripts/install.sh` 头部注释。
+
 ## 自测
 
 ```bash
-bun test   # 76 用例 / 447 expect：工具层 + 记忆层 + checkpoint + skills + AGENTS.md + P2（ACI/任务模式/预算/resume）+ P3（安全/闸门/审计）+ P4（通用化 9 项），零外部依赖
+bun test   # 85 用例 / 490 expect：工具层 + 记忆层 + checkpoint + skills + AGENTS.md + P2（ACI/任务模式/预算/resume）+ P3（安全/闸门/审计）+ P4（通用化 9 项）+ P5（release 工作流 + 安装脚本端到端），零外部依赖
 bun run skills/web-search/self-test.ts --online   # web-search skill 在线实测（可选）
 ```
 
 ## 迭代路线
 
-见 [docs/README.md](./docs/README.md)（里程碑进度与迭代索引）。M1 = P0+P1 ✅、skills ✅、AGENTS.md ✅、M2 = P2-1 ~ P2-4 ✅、**M3 = P3 质量与防护 ✅**、**M4 = P4 通用化 ✅（2026-08 完成）** —— bun-bot 现在可以在任意项目使用：`bun-bot init` 一键初始化，身份/关键文件/测试闸门按项目自适应，状态文件不污染仓库。
+见 [docs/README.md](./docs/README.md)（里程碑进度与迭代索引）。M1 = P0+P1 ✅、skills ✅、AGENTS.md ✅、M2 = P2-1 ~ P2-4 ✅、**M3 = P3 质量与防护 ✅**、**M4 = P4 通用化 ✅（2026-08 完成）**、**M5 = P5 全平台分发 ✅（2026-08 完成）** —— `bun-bot init` 一键初始化 + GitHub Actions 构建全平台 + 一行安装脚本，任意项目 / 任意平台都能用。
