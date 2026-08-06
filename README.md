@@ -9,7 +9,7 @@
 - 🧠 **代码驱动推理**：所有结论都通过真实运行脚本验证，而不是凭空猜测
 - 🔧 **工具注册表**：`src/tools.ts` 用注册表模式管理工具，agent 可以读自己 → 改自己 → 测自己
 - 🧭 **自我认知**：启动时加载 README + docs + 文件树 + 记忆，系统提示词含「身份 / 能力 / 项目 / 记忆 / 规则」五区块
-- 💾 **跨会话记忆**：`AGENT_STATE.json`（机器态）+ `MEMORY.md`（人类可读版）持久化，重启后能引用上次决策
+- 💾 **跨会话记忆**：`AGENT_STATE.json`（机器态）+ `MEMORY.md`（人类可读版）本地持久化（gitignore，不纳入版本控制），重启后能引用上次决策
 - 🛡️ **自修改安全**：`write_file` 落盘前自动 git 快照 + 返回行级 diff 摘要
 - ⚡ **Bun 原生执行**：脚本用 `Bun.spawn` 运行，`run_script` 默认沙箱 tmpdir，可指定工作区 cwd
 
@@ -43,8 +43,8 @@ bun run index.ts --stream "计算斐波那契数列第 30 项"   # SSE 流式输
 │   └── git.ts          # write_file 前的安全快照
 ├── tests/
 │   └── tools.test.ts   # 12 个 self-test 用例（修改自身代码后的验证闸门）
-├── AGENT_STATE.json    # 机器可读记忆
-├── MEMORY.md           # 人类可读记忆（git 可追踪）
+├── AGENT_STATE.json    # 机器可读记忆（本地持久化，gitignore）
+├── MEMORY.md           # 人类可读记忆（本地持久化，gitignore）
 ├── blog.md             # agent 真实运行实录（自我进化过程）
 └── docs/               # 迭代计划与架构文档
 ```
