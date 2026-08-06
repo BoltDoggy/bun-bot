@@ -1,4 +1,4 @@
-// bun-bot — 自我认知为 Bun.js 运行时的 agent。M1（P0+P1）：认识自己、能改自己 —— 自修改最小闭环成立（P0: AGENT_STATE.json / MEMORY.md 记忆；P1: run_script + read/write/list/bash 工具集）。P2-2 任务模式：--self 先 plan 后执行、逐项勾选、进度写回状态可续跑。P2-3 上下文预算：budget.ts token 估算 + tool result clearing（超限时压缩早期工具结果）。P2-4 checkpoint：--resume 会话级断点续跑（消息历史落盘 AGENT_CHECKPOINT.json，中断后恢复上下文继续）。
+// bun-bot — 自我认知为 Bun.js 运行时的 agent。M1（P0+P1）：认识自己、能改自己 —— 自修改最小闭环成立（P0: AGENT_STATE.json / MEMORY.md 记忆；P1: run_script + read/write/list/bash 工具集）。P2-2 任务模式：--self 先 plan 后执行、逐项勾选、进度写回状态可续跑。P2-3 上下文预算：budget.ts token 估算 + tool result clearing（超限时压缩早期工具结果）。P2-4 checkpoint：--resume 会话级断点续跑（消息历史落盘 AGENT_CHECKPOINT.json，中断后恢复上下文继续）。P3 质量与防护：git 安全阀补 run_bash（写操作前自动快照）+ 测试闸门（收尾自动跑测试、失败自动回滚）+ 沙箱权限分级（路径限制工作区 / 危险命令黑名单）+ 审计日志（AUDIT.log.jsonl）。
 // 用法: bun run index.ts [--stream] [--self] [--resume] "你的任务"（--stream 走 SSE 流式；--self 开任务模式；--resume 从上次断点续跑，可不带任务）
 import { existsSync } from "node:fs";
 import {
@@ -15,7 +15,10 @@ import {
   buildResumeMessages,
 } from "./src/memory";
 import { buildSystemPrompt } from "./src/context";
-import { tools, executeTool } from "./src/tools";
+import { tools, executeTool, clipOutput } from "./src/tools";
+import { currentHead, isGitRepo } from "./src/git";
+import { enforceTestGate } from "./src/gate";
+import { appendAudit } from "./src/audit";
 import {
   estimateMessagesTokens,
   compressContext,
@@ -147,8 +150,13 @@ if (RESUME) {
 // P2-3：本轮会话触发的上下文压缩告警（结束时写回 state.contextWarnings）
 const sessionWarnings: string[] = [];
 
+// P3-2：记录会话开始时的 HEAD —— 测试闸门失败时回滚到这里（会话前的状态）
+const sessionStartHead = await currentHead();
+// P3-2：本会话是否发生过自修改（write_file / 写操作 run_bash）→ 收尾触发测试闸门
+let didModify = false;
+
 console.error("[bun-bot] 工作区: " + workspace());
-console.error("[bun-bot] 模型: " + MODEL + " | 流式: " + STREAM + " | 任务模式: " + SELF_MODE + " | 续跑: " + RESUME + " | 上下文预算: " + BUDGET_TOKENS + " tokens");
+console.error("[bun-bot] 模型: " + MODEL + " | 流式: " + STREAM + " | 任务模式: " + SELF_MODE + " | 续跑: " + RESUME + " | 上下文预算: " + BUDGET_TOKENS + " tokens" + (sessionStartHead ? " | 会话起点 HEAD: " + sessionStartHead.slice(0, 8) : "（非 git 仓库，无回滚锚点）"));
 // P2-2：任务模式下检测到上次未完成计划 → 提示续跑（[记忆] 区块已展示进度）
 if (SELF_MODE && state.activePlan && state.activePlan.status === "active") {
   console.error("[bun-bot] 任务模式：检测到未完成计划「" + state.activePlan.title + "」，从上次断点继续（见 [记忆] 当前任务计划）");
@@ -174,13 +182,21 @@ for (let i = 0; i < MAX_ITERATIONS; i++) {
   saveCheckpoint(messages);
 
   if (!message.tool_calls?.length) {
-    // 没有工具调用，任务完成：写回记忆、清除 checkpoint 后退出
-    if (!STREAM) console.log(message.content ?? "");
+    // 没有工具调用，任务完成：跑测试闸门（P3-2）→ 写回记忆、清除 checkpoint 后退出
+    let finalContent = message.content ?? "";
+    // P3-2：本会话发生过自修改 → 收尾自动跑测试；失败自动回滚到会话开始前
+    if (didModify && isGitRepo(workspace())) {
+      const gate = await enforceTestGate(sessionStartHead);
+      if (!gate.passed || gate.rolledBack) {
+        finalContent = finalContent + "\n\n--- 测试闸门（P3-2）---\n" + gate.output;
+      }
+    }
+    if (!STREAM) console.log(finalContent);
     // 重新加载再写回：update_plan 可能已在会话中改过 activePlan，
     // 用旧 state 引用覆盖会把进度冲掉（防覆盖）
     const fresh = loadState();
     fresh.lastTask = task || (resumedFromCheckpoint ? "（--resume 续跑完成）" : task);
-    fresh.lastSummary = message.content ?? "";
+    fresh.lastSummary = finalContent;
     fresh.lastRunAt = new Date().toISOString();
     // P2-3：本轮压缩告警合并进 contextWarnings（保留最近 10 条）
     if (sessionWarnings.length) {
@@ -200,6 +216,25 @@ for (let i = 0; i < MAX_ITERATIONS; i++) {
       : call.function.arguments;
     console.error("\n--- [" + call.function.name + "] " + argPreview);
     const result = await executeTool(call.function.name, call.function.arguments);
+    // P3-4：审计日志 —— 每次工具调用入参/出参摘要落盘 AUDIT.log.jsonl
+    let parsedResult: { exitCode?: number; gitSnapshot?: string } | null = null;
+    try {
+      parsedResult = JSON.parse(result) as { exitCode?: number; gitSnapshot?: string };
+    } catch {}
+    appendAudit({
+      ts: new Date().toISOString(),
+      round: i + 1,
+      tool: call.function.name,
+      args: clipOutput(call.function.arguments, 400),
+      result: clipOutput(result, 500),
+      exitCode: parsedResult?.exitCode,
+    });
+    // P3-2：跟踪自修改 —— write_file 成功，或 run_bash 返回了 gitSnapshot（写操作命令）
+    if (call.function.name === "write_file" && parsedResult && !("error" in parsedResult)) {
+      didModify = true;
+    } else if (call.function.name === "run_bash" && parsedResult?.gitSnapshot) {
+      didModify = true;
+    }
     const resultPreview = result.length > 2000 ? result.slice(0, 2000) + "\n… [结果过长，完整版已回传模型]" : result;
     console.error("\n" + resultPreview + "\n");
     messages.push({ role: "tool", tool_call_id: call.id, content: result });
