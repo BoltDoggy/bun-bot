@@ -1,0 +1,80 @@
+# build.yml — 全平台编译产物构建与发布（GitHub Actions）
+#
+# 触发：
+#   - push tag `v*`（如 v0.1.0）→ 构建全部平台并发布到 GitHub Release（附带 SHA256 校验文件）
+#   - workflow_dispatch（手动）→ 仅构建并上传 Actions Artifact（不发布 Release）
+#
+# 产物命名（安装脚本 scripts/install.sh / install.ps1 按此约定下载）：
+#   bun-bot-linux-x64 / bun-bot-linux-arm64 / bun-bot-darwin-x64 / bun-bot-darwin-arm64
+#   bun-bot-windows-x64.exe / bun-bot-windows-arm64.exe
+#   每个产物附带 `bun-bot-<target>.sha256`（内容: "<sha256>  <文件名>"）
+#
+# 说明：
+#   - 原生矩阵构建（每个平台用自己的 Bun 运行时编译），比交叉编译可靠
+#   - windows-arm64 为实验 runner（windows-11-arm），失败不影响其他平台（continue-on-error）
+#   - 构建逻辑统一在 scripts/build.sh（本地与 CI 共用）
+
+name: build-release
+
+on:
+  workflow_dispatch:        # 手动触发（Actions 页面点 Run workflow）
+  push:
+    tags:
+      - "v*"                # 打 tag 自动构建 + 发布 Release
+
+permissions:
+  contents: write           # 上传 Release 资产需要
+
+jobs:
+  build:
+    name: build (${{ matrix.target }})
+    runs-on: ${{ matrix.os }}
+    continue-on-error: ${{ matrix.experimental }}
+    strategy:
+      fail-fast: false       # 一个平台失败不阻塞其他平台
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: linux-x64
+            experimental: false
+          - os: ubuntu-24.04-arm
+            target: linux-arm64
+            experimental: false
+          - os: macos-13
+            target: darwin-x64
+            experimental: false
+          - os: macos-latest
+            target: darwin-arm64
+            experimental: false
+          - os: windows-latest
+            target: windows-x64
+            experimental: false
+          - os: windows-11-arm
+            target: windows-arm64
+            experimental: true      # 实验 runner，失败不阻塞
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Build (${{ matrix.target }})
+        shell: bash                  # Windows runner 自带 Git Bash
+        run: bash scripts/build.sh ${{ matrix.target }}
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: bun-bot-${{ matrix.target }}
+          path: dist/*
+          if-no-files-found: error
+
+      - name: Publish to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          fail_on_unmatched_files: true
+          generate_release_notes: true
