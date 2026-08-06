@@ -1,9 +1,11 @@
 /**
- * git.ts — 自修改前的安全快照（M1 简化版）
+ * git.ts — 自修改前的安全快照（M1 简化版 + P3-1 run_bash 安全阀）
  *
- * 完整的安全阀（自动 revert、测试闸门）属于 P3。M1 先落地最关键的：
- * 任何 write_file 落盘前先 `git add -A && git commit` 打一个快照，
- * 保证修改可回溯。
+ * 完整的安全阀（自动 revert、测试闸门）属于 P3（src/gate.ts）。
+ * 这里提供：
+ *   - write_file 落盘前 `git add -A && git commit` 打一个快照（M1）
+ *   - run_bash 执行"写操作"命令前，若工作区有未提交改动先固化（P3-1），
+ *     保证 agent 用 shell 直接改文件（sed -i / git commit / bun install 等）也可回滚。
  */
 import { existsSync } from "node:fs";
 import { join } from "node:path";
@@ -38,4 +40,30 @@ export async function snapshot(reason: string, base = workspace()): Promise<stri
   const commit = await runGit(base, ["commit", "-m", "bun-bot 快照（修改前）: " + reason]);
   const m = commit.match(/\[([^\]]+)\]/);
   return "已提交 git 快照 [" + (m ? m[1] : commit.slice(0, 60)) + "]";
+}
+
+/** 工作区是否有未提交改动（含未跟踪文件）；非 git 仓库返回 false */
+export async function hasUncommittedChanges(base = workspace()): Promise<boolean> {
+  if (!isGitRepo(base)) return false;
+  const out = await runGit(base, ["status", "--porcelain"]);
+  return out.trim().length > 0;
+}
+
+/**
+ * P3-1：run_bash 等工具执行前调用 —— 工作区有未提交改动时先打快照固化（可回滚）。
+ * @returns 快照信息；没有未提交改动或非 git 仓库时返回 null（不产生噪音提交）
+ */
+export async function snapshotIfDirty(reason: string, base = workspace()): Promise<string | null> {
+  if (await hasUncommittedChanges(base)) {
+    return await snapshot(reason, base);
+  }
+  return null;
+}
+
+/** 当前 HEAD commit hash；非 git 仓库返回 null */
+export async function currentHead(base = workspace()): Promise<string | null> {
+  if (!isGitRepo(base)) return null;
+  const out = await runGit(base, ["rev-parse", "HEAD"]);
+  const hash = out.trim();
+  return /^[0-9a-f]{40}$/.test(hash) ? hash : null;
 }
