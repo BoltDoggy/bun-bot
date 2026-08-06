@@ -14,6 +14,10 @@
 #   - darwin-x64 用 macos-15（Intel x64；macos-13 已退役 2025-12，runner 池无容量导致排队）
 #   - windows-arm64 为实验 runner（windows-11-arm），失败不影响其他平台（continue-on-error）
 #   - 构建逻辑统一在 scripts/build.sh（本地与 CI 共用）
+#   - 发布用独立 release job（needs: build）统一执行一次 —— 6 个 matrix job 并发
+#     发布同一 tag 会同时 create 同名 Release 导致 422 竞态（v0.4.0 实测：
+#     darwin-arm64 / linux-arm64 两个 job 撞车，Release 缺 2 平台资产）。
+#     改为 build job 只上传 artifact，release job 下载合并后一次性发布，彻底消除竞态。
 
 name: build-release
 
@@ -72,8 +76,21 @@ jobs:
           path: dist/*
           if-no-files-found: error
 
+  # 发布：独立 job 等全部平台构建完成后，合并所有 artifact 统一发布一次。
+  # 不在 matrix job 里各发各的（并发 create 同一 tag 的 Release 会 422 竞态，v0.4.0 踩过）。
+  release:
+    name: publish release
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/')   # 手动触发（workflow_dispatch）不发布
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true       # 6 个 artifact（产物 + .sha256）合并到 dist/
+
       - name: Publish to GitHub Release
-        if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
           files: dist/*
