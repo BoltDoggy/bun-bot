@@ -26,3 +26,6 @@ bun.lockb
 
 # P4-4：状态目录（AGENT_STATE / MEMORY / CHECKPOINT / AUDIT 移入 .bunbot/，gitignore 自动追加）
 .bunbot/
+
+# 编译产物（bun build --compile 输出，60MB+ 不入库）
+bun-bot
