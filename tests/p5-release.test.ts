@@ -16,7 +16,7 @@
  * 运行：bun test
  */
 import { test, expect, beforeAll, afterAll } from "bun:test";
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -156,9 +156,8 @@ test("install.sh 端到端：下载 → SHA256 校验 → 安装（可执行位�
   const installed = join(dir, "bun-bot-linux-x64");
   expect(existsSync(installed)).toBe(true);
   expect(readFileSync(installed, "utf8")).toBe(GOOD_CONTENT);
-  const mode = Bun.file(installed).unixMode;
-  expect(mode).not.toBeNull();
-  expect(mode! & 0o111).not.toBe(0); // 可执行位
+  // 可执行位（install -m 0755）：statSync().mode 的 x 位掩码（0o111）
+  expect(statSync(installed).mode & 0o111).not.toBe(0);
 });
 
 test("install.sh --version 指定版本走 /download/v<版本>/ 路径", async () => {
