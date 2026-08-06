@@ -4,11 +4,13 @@
 
 **M1 里程碑（P0+P1）**：agent 认识自己、能改自己的文件 —— 自修改最小闭环成立。
 **附加能力**：skills 组合操作库 —— 多步、有坑、会过时的操作固化成 SKILL.md，按需加载、自带自测。
+**M2 起点（P2-1）**：工具描述 ACI 化 —— 5 个工具的 description 均带 example usage，把工具描述当 prompt 打磨。
 
 ## 特性
 
 - 🧠 **代码驱动推理**：所有结论都通过真实运行脚本验证，而不是凭空猜测
 - 🔧 **工具注册表**：`src/tools.ts` 用注册表模式管理工具，agent 可以读自己 → 改自己 → 测自己
+- 🎯 **ACI 化工具描述**：5 个工具的 `description` 均带「示例：」example usage（few-shot），参数语义同步打磨，系统提示词 [能力] 区块双保险（learn 工具设计五原则之五落地）
 - 🧭 **自我认知**：启动时加载 AGENTS.md（如有）+ README + docs + 文件树 + 记忆，系统提示词含「身份 / 能力 / 项目 / 记忆 / 规则」五区块
 - 📜 **AGENTS.md 项目级指令**：项目根目录的 `AGENTS.md`（可选）是用户与 agent 的项目级契约，存在时自动加载进 [项目] 区块最前、优先级最高（高于 README / docs），[规则] 中声明其约束力；类似 CLAUDE.md 的通用约定，方便接入任何支持 AGENTS.md 的 agent 工具链
 - 🧩 **skills 组合操作库**：`skills/<name>/SKILL.md` 固化「多步 + 有坑 + 会过时」的操作（如 web-search），系统提示词只放一层索引，细节按需 `read_file` 加载；每个 skill 带版本号 + 自测命令，纳入测试闸门
@@ -38,6 +40,8 @@ bun run index.ts --stream "计算斐波那契数列第 30 项"   # SSE 流式输
 | `list_dir` | 列目录（`-a` 显示隐藏文件、`depth` 限制深度，最大 8） |
 | `run_bash` | 执行 shell 命令（cwd 默认工作区，超时可配） |
 
+> 5 个工具的 `description` 均带 example usage（ACI 化，P2-1），详情见 `src/tools.ts`。
+
 ## skills（组合操作库）
 
 | skill | 一句话 | 自测 |
@@ -52,14 +56,14 @@ bun run index.ts --stream "计算斐波那契数列第 30 项"   # SSE 流式输
 ├── index.ts            # 入口：CLI 解析 + agent 主循环（保持轻量）
 ├── AGENTS.md            # 可选：项目级指令（存在时自动加载，优先级最高）
 ├── src/
-│   ├── tools.ts        # 工具注册表（新增工具在此注册）
+│   ├── tools.ts        # 工具注册表（新增工具在此注册；description 带 example usage）
 │   ├── context.ts      # 系统提示词组装：身份 + 能力 + 项目 + 记忆 + 规则
 │   ├── memory.ts       # 记忆读写：AGENT_STATE.json / MEMORY.md + AGENTS.md + 项目上下文
 │   └── git.ts          # write_file 前的安全快照
 ├── skills/             # 组合操作库（SKILL.md + 实现 + 自测）
 │   └── web-search/     # 联网搜索 skill（search.ts / self-test.ts / samples/）
 ├── tests/
-│   └── tools.test.ts   # 17 个 self-test 用例（修改自身代码后的验证闸门）
+│   └── tools.test.ts   # 19 个 self-test 用例（修改自身代码后的验证闸门）
 ├── AGENT_STATE.json    # 机器可读记忆（本地持久化，gitignore）
 ├── MEMORY.md           # 人类可读记忆（本地持久化，gitignore）
 ├── blog.md             # agent 真实运行实录（自我进化过程）
@@ -78,7 +82,7 @@ bun run index.ts --stream "计算斐波那契数列第 30 项"   # SSE 流式输
 ## 自测
 
 ```bash
-bun test   # 17 个用例：工具层 + 记忆层 + skills 层 + AGENTS.md，零外部依赖
+bun test   # 19 个用例：工具层 + 记忆层 + skills 层 + AGENTS.md + P2-1 ACI 化，零外部依赖
 bun run skills/web-search/self-test.ts --online   # web-search skill 在线实测（可选）
 ```
 
