@@ -11,6 +11,7 @@
 #
 # 说明：
 #   - 原生矩阵构建（每个平台用自己的 Bun 运行时编译），比交叉编译可靠
+#   - darwin-x64 用 macos-15（Intel x64；macos-13 已退役 2025-12，runner 池无容量导致排队）
 #   - windows-arm64 为实验 runner（windows-11-arm），失败不影响其他平台（continue-on-error）
 #   - 构建逻辑统一在 scripts/build.sh（本地与 CI 共用）
 
@@ -40,7 +41,7 @@ jobs:
           - os: ubuntu-24.04-arm
             target: linux-arm64
             experimental: false
-          - os: macos-13
+          - os: macos-15
             target: darwin-x64
             experimental: false
           - os: macos-latest
