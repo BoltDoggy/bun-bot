@@ -35,6 +35,8 @@ let tmp: string;
 beforeAll(() => {
   tmp = mkdtempSync(join(tmpdir(), "bun-bot-test-"));
   process.env.BUN_BOT_WORKSPACE = tmp;
+  // 真实项目总有一个 README，loadProjectContext 的优先级断言依赖它存在
+  writeFileSync(join(tmp, "README.md"), "# sandbox project\n");
 });
 afterAll(() => {
   rmSync(tmp, { recursive: true, force: true });
