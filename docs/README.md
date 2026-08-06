@@ -2,8 +2,8 @@
 
 | 文档 | 说明 |
 | --- | --- |
-| [PLAN.md](./PLAN.md) | **主计划**：拥抱 1M 上下文，把 bun-bot 从"脚本执行器"迭代成"能读懂自己、修改自己、记住自己"的长期 agent。P0/P1 已完成并勾选，P2/P3 待办 |
-| [ARCHITECTURE.md](./ARCHITECTURE.md) | 现状分析（as-is）：随代码演进更新，当前快照基于 M1（P0+P1）+ skills 能力 + AGENTS.md + P2-1 工具描述 ACI 化落地后的实际代码 |
+| [PLAN.md](./PLAN.md) | **主计划**：拥抱 1M 上下文，把 bun-bot 从"脚本执行器"迭代成"能读懂自己、修改自己、记住自己"的长期 agent。P0/P1/skills/AGENTS.md/P2-1/P2-2 已完成并勾选，P2 剩 budget.ts + checkpoint，P3 待办 |
+| [ARCHITECTURE.md](./ARCHITECTURE.md) | 现状分析（as-is）：随代码演进更新，当前快照基于 M1（P0+P1）+ skills 能力 + AGENTS.md + P2-1 工具描述 ACI 化 + P2-2 任务模式落地后的实际代码 |
 
 ## 里程碑进度
 
@@ -25,11 +25,16 @@
   - `src/tools.ts`：5 个工具 `description` 均带「示例：」JSON 参数形态的 example usage，参数语义同步打磨
   - `src/context.ts`：[能力] 区块工具描述同步带极简 few-shot（双保险）
   - 自测: `bun test` 新增 2 用例固化验收（5 工具 description 均含示例 / 系统提示词含示例），19 用例 / 87 expect 全绿
-- ⏳ **M2（P2）**：`--self` 长任务 + checkpoint / `--resume` 续跑、上下文预算摘要（`budget.ts`）、任务模式（plan 逐项勾选写回状态）
+- ✅ **P2-2 任务模式（M2 第二项）已完成**：长任务有目标锚点，中断可续跑
+  - `update_plan` 工具（全量覆盖式）：首轮创建计划（title + 分步 items）→ 每完成一步勾选（done + detail）→ 全部 done 自动 status=done
+  - `AgentState.activePlan` 持久化 + MEMORY.md 同步「当前任务计划」区块；主循环结束重载 state 防覆盖
+  - `--self` 标志注入 [任务模式] 区块（先 plan 后执行、逐项勾选、未完成计划续跑提示）
+  - 自测: `bun test` 新增 3 用例固化验收（update_plan 创建/勾选/记忆往返 / 参数校验 / 任务模式提示词），22 用例 / 126 expect 全绿
+- ⏳ **M2（P2）**：剩 `budget.ts` + tool result clearing（上下文预算）、checkpoint / `--resume` 续跑（activePlan 已是数据基础）
 - ⏳ **M3（P3）**：回滚、测试闸门、沙箱加固、审计日志
 
 ## 与主 README 的关系
 
 主 [README.md](../README.md) 面向使用者（快速开始 / 工具集 / 配置项）；本目录面向**自我迭代**（计划 / 现状 / 进度），是 agent 启动时加载的"项目上下文"一部分。
 
-> 更新时间：2026-08 · 起点 = 模型支持 1M 上下文 · 最新修订 = ARCHITECTURE 快照对齐 M1 + skills + AGENTS.md + P2-1 后代码
+> 更新时间：2026-08 · 起点 = 模型支持 1M 上下文 · 最新修订 = ARCHITECTURE 快照对齐 M1 + skills + AGENTS.md + P2-1 + P2-2 后代码
