@@ -28,7 +28,7 @@ export DEEPSEEK_API_KEY=sk-xxx   # 或写入 .env（Bun 会自动加载）
 ### 3. 运行
 
 ```bash
-bun run index.ts "计算斐波那契数列第 30 项"
+bun run index.ts "计算斐波那契数列第 30 项"   # 默认流式（SSE），逐 token 打字机输出
 ```
 
 ## 用法示例
@@ -38,13 +38,14 @@ bun run index.ts "计算斐波那契数列第 30 项"
 | 跑一个计算任务 | `bun run index.ts "1 到 100 的和"` |
 | 操作数据 | `bun run index.ts "读取当前目录并统计文件数量"` |
 | 验证想法 | `bun run index.ts "验证 2^10 是否等于 1024"` |
+| 一次性输出 | `bun run index.ts --no-stream "1 到 100 的和"` |
 
 ## 工作原理
 
 1. 启动时读取 CLI 参数作为任务，拼接到 messages 里发给 DeepSeek
 2. 模型若需要验证/计算，会发起 `run_script` 工具调用
 3. agent 把脚本临时写入 `tmpdir`，用 `bun run` 执行，把 stdout/stderr/exitCode 回传给模型
-4. 模型观察结果后继续推理，直到不再调用工具，输出最终结论
+4. 模型观察结果后继续推理，直到不再调用工具，输出最终结论（默认流式逐 token 输出，加 `--no-stream` 可关闭）
 
 ## 配置项（index.ts 顶部常量）
 

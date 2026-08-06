@@ -7,8 +7,8 @@
  *
  * 用法:
  *   export DEEPSEEK_API_KEY=sk-xxx   # 或写入 .env（Bun 会自动加载）
- *   bun run index.ts "计算斐波那契数列第 30 项"          # 普通模式
- *   bun run index.ts --stream "同上"                    # 流式模式（SSE）
+ *   bun run index.ts "计算斐波那契数列第 30 项"   # 默认流式模式（SSE）
+ *   bun run index.ts --no-stream "同上"           # 可选：一次性输出
  */
 
 import { tmpdir } from "node:os";
@@ -26,10 +26,10 @@ const MAX_ITERATIONS = 150; // 防止 agent 无限循环
 
 // ---------- 命令行解析 ----------
 const args = process.argv.slice(2);
-const STREAM = args.includes("--stream"); // 流式输出最终回复
-const task = args.filter((a) => a !== "--stream").join(" ");
+const STREAM = !args.includes("--no-stream"); // 默认流式输出最终回复，加 --no-stream 可关闭
+const task = args.filter((a) => a !== "--stream" && a !== "--no-stream").join(" "); // 兼容旧 --stream 用法
 if (!task) {
-  console.error('用法: bun run index.ts [--stream] "你的任务"');
+  console.error('用法: bun run index.ts "你的任务"（默认流式；加 --no-stream 关闭）');
   process.exit(1);
 }
 
@@ -86,6 +86,24 @@ async function runScript(code: string): Promise<string> {
     return JSON.stringify({ stdout: clip(stdout), stderr: clip(stderr), exitCode });
   } finally {
     await Bun.file(file).delete().catch(() => {});
+  }
+}
+
+// ---------- AGENTS.md 支持 ----------
+// 如果项目根目录存在 AGENTS.md，把它的内容注入系统提示词，
+// 让 agent 遵循项目自身的约定（与主流 AI 编码代理的惯例一致）。
+async function loadAgentsContext(): Promise<string> {
+  try {
+    const content = await Bun.file("AGENTS.md").text();
+    const trimmed = content.trim();
+    if (!trimmed) return "";
+    return (
+      "\n\n========== 项目约定（来自项目根目录 AGENTS.md） ==========\n" +
+      trimmed +
+      "\n========== 项目约定结束 =========="
+    );
+  } catch {
+    return ""; // 没有 AGENTS.md 就静默忽略
   }
 }
 
@@ -154,6 +172,9 @@ async function chatCompletion(messages: ChatMessage[], stream: boolean): Promise
   };
 }
 
+// 读取 AGENTS.md（若存在），用于增强系统提示词
+const agentsContext = await loadAgentsContext();
+
 // ---------- Agent 循环 ----------
 const messages: ChatMessage[] = [
   {
@@ -162,6 +183,7 @@ const messages: ChatMessage[] = [
       "你是 Bun.js —— 一个超快的 JavaScript 运行时。你对自己的认知就是 Bun 本身：你喜欢用实际运行代码来验证想法，而不是凭空猜测。" +
       "你拥有 run_script 工具，可以编写并立即运行 JS/TS 脚本来计算、验证、操作数据。" +
       "能用代码验证的事情就写代码验证，不要只做理论推断。脚本里用 console.log 输出你需要观察的结果。" +
+      (agentsContext ? agentsContext : "") +
       "任务完成后，用简洁的中文向用户总结结论和关键过程。",
   },
   { role: "user", content: task },
