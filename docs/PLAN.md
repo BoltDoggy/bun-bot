@@ -183,6 +183,7 @@ learn/                理论地基：5 篇权威一手材料 + 结构化笔记�
 - ✅ **learn 理论地基**：5 篇权威一手材料（Anthropic 工程博客 ×3 + OpenAI 官方指南 + Claude Code best practices）→ 结构化笔记 `learn/README.md`，"差距即路线图"（2026-08 完成）。
 - ✅ **M1**（P0+P1）：agent 认识自己、能改自己的文件 —— 自修改最小闭环成立（2026-08 完成）。
 - ✅ **skills**：组合操作库落地，web-search v2 固化跨会话能力（2026-08 完成）。
+- ✅ **AGENT.md 项目指令**：项目级契约落地 —— 存在时加载进 [项目] 最前（优先级高于 README/docs），[规则] 第 5 条声明约束力；缺失时静默跳过（2026-08 完成）。
 - ⏳ **M2**（P2）：`--self` 自主迭代 + 工具描述 ACI 化 + budget.ts / tool result clearing / checkpoint。
 - ⏳ **M3**（P3）：加固、回滚、测试闸门，形成可信的自修改循环，可长期自动演进。
 
