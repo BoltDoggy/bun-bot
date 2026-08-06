@@ -12,7 +12,7 @@
 
 - 必填环境变量：`DEEPSEEK_API_KEY`（写入 `.env`，已 gitignore；未设置时 fallback 全局配置 `~/.bun-bot/config.json` 的 `apiKey`）
 - 入口：`bun run index.ts [--stream] [--self] [--resume] [--interactive] "任务"`；`--stream` 走 SSE 流式输出，`--self` 开任务模式（先 plan 后执行、逐项勾选、中断可续跑），`--resume` 从上次断点恢复会话（可不带任务；带任务作为追加指令），`--interactive` 多轮 REPL（可不带任务）；全局 CLI：`bun-bot`（bun link 安装 `bin/bun-bot.ts`，或安装编译产物；CLI 命令逻辑在 `src/cli.ts`，`index.ts` 编译产物入口在 API key 检查前同样拦截支持 `init` / `--version` / `--help`）
-- 构建与发布（P5）：本地构建 `bash scripts/build.sh [target]`（产物 `dist/bun-bot-<target>[.exe]` + `.sha256`）；GitHub Actions（`.github/workflows/build.yml`）打 tag `v*` 自动构建 6 平台并发布 Release，手动触发只出 artifact；用户安装 `curl -fsSL https://raw.githubusercontent.com/BoltDoggy/bun-bot/HEAD/scripts/install.sh | sh`（Windows 用 `install.ps1`）
+- 构建与发布（P5）：本地构建 `bash scripts/build.sh [target]`（产物 `dist/bun-bot-<target>[.exe]` + `.sha256`）；GitHub Actions（`.github/workflows/build.yml`）打 tag `v*` 自动构建 6 平台并发布 Release，手动触发只出 artifact；用户安装 `curl -fsSL https://raw.githubusercontent.com/BoltDoggy/bun-bot/HEAD/scripts/install.sh | sh`（Windows 用 `install.ps1`，均安装为 `bun-bot` / `bun-bot.exe` 命令，不带平台后缀）
 - 可调变量（优先级：环境变量 > .bunbot.json 项目配置 > ~/.bun-bot/config.json 全局配置 > 默认值）：
   - `BUN_BOT_MODEL` / `model`（默认 `deepseek-v4-flash`）
   - `BUN_BOT_MAX_ITERATIONS`（默认 150）
@@ -51,7 +51,7 @@
 - **配置三级**：环境变量 > .bunbot.json > ~/.bun-bot/config.json（P4-3/8），`loadConfig(base)` 统一合并；API key 只做全局 fallback 不进项目配置
 - **通用化原则（P4）**：系统提示词不硬编码 bun-bot 自身文件结构（关键文件按存在性动态生成）；测试闸门多生态探测；状态文件不污染用户仓库
 - **编译产物自举（P4-11）**：`run_script` spawn 自身（`process.execPath`：源码时=bun、编译时=编译产物）；编译产物 `./bun-bot run <script>` 及 `init` / `--version` / `--help` 走 index.ts 顶部拦截（API key 检查前）—— 前者用内嵌运行时执行外部脚本，后者提供完整 CLI —— 无 bun 环境的用户机器也能跑 run_script（`bun build --compile` 分发，体积约 60MB+，按平台编译）
-- **release 流程（P5）**：构建逻辑收敛在 `scripts/build.sh`（本地与 CI 共用：bun install → bun test → bun build --compile → 生成 `.sha256`）；`.github/workflows/build.yml` 原生矩阵 6 平台（`ubuntu-latest` linux-x64 / `ubuntu-24.04-arm` linux-arm64 / `macos-13` darwin-x64 / `macos-latest` darwin-arm64 / `windows-latest` windows-x64 / `windows-11-arm` windows-arm64 实验性），tag `v*` 触发发布 GitHub Release、手动触发只出 artifact；安装脚本 `scripts/install.sh`（POSIX sh）/ `install.ps1`（PowerShell）从 `github.com/<repo>/releases` 下载 `bun-bot-<target>[.exe]` + `.sha256`（latest 走 `/latest/download/`，指定版本走 `/download/v<版本>/`），**SHA256 校验失败必须中止安装**；安装脚本支持 `BUN_BOT_BASE_URL` 等环境变量覆盖（测试用本地 mock server 端到端验证，见 `tests/p5-release.test.ts`）
+- **release 流程（P5）**：构建逻辑收敛在 `scripts/build.sh`（本地与 CI 共用：bun install → bun test → bun build --compile → 生成 `.sha256`）；`.github/workflows/build.yml` 原生矩阵 6 平台（`ubuntu-latest` linux-x64 / `ubuntu-24.04-arm` linux-arm64 / `macos-13` darwin-x64 / `macos-latest` darwin-arm64 / `windows-latest` windows-x64 / `windows-11-arm` windows-arm64 实验性），tag `v*` 触发发布 GitHub Release、手动触发只出 artifact；安装脚本 `scripts/install.sh`（POSIX sh）/ `install.ps1`（PowerShell）从 `github.com/<repo>/releases` 下载 `bun-bot-<target>[.exe]` + `.sha256`（latest 走 `/latest/download/`，指定版本走 `/download/v<版本>/`），**SHA256 校验失败必须中止安装**；安装时重命名为 `bun-bot` / `bun-bot.exe`（命令统一不带平台后缀）；安装脚本支持 `BUN_BOT_BASE_URL` 等环境变量覆盖（测试用本地 mock server 端到端验证，见 `tests/p5-release.test.ts`）
 
 ## 踩坑（非显然行为）
 

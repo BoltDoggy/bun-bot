@@ -22,10 +22,10 @@
 **第一步：安装 bun-bot（编译产物一键安装，无需 bun 环境）**
 
 ```bash
-# macOS / Linux（一行安装：自动检测平台，下载最新 Release → SHA256 校验 → 装到 ~/.local/bin）
+# macOS / Linux（一行安装：自动检测平台，下载最新 Release → SHA256 校验 → 装为 bun-bot 命令到 ~/.local/bin）
 curl -fsSL https://raw.githubusercontent.com/BoltDoggy/bun-bot/HEAD/scripts/install.sh | sh
 
-# Windows（PowerShell：下载 .exe → SHA256 校验 → 装到 %LOCALAPPDATA%\bun-bot\bin → 加入用户 PATH）
+# Windows（PowerShell：下载 .exe → SHA256 校验 → 装为 bun-bot.exe 到 %LOCALAPPDATA%\bun-bot\bin → 加入用户 PATH）
 powershell -ExecutionPolicy Bypass -c "irm https://raw.githubusercontent.com/BoltDoggy/bun-bot/HEAD/scripts/install.ps1 | iex"
 ```
 
@@ -74,7 +74,7 @@ bun-bot "分析这个项目的结构并给出建议"
 - 🌍 **通用化（P4）**：可在**任意项目**使用 —— 身份可配置、关键文件按存在性动态生成、状态文件不污染目标仓库、大项目文件树感知 .gitignore + 截断
 - ⚡ **Bun 原生执行**：脚本用 `Bun.spawn` 运行，默认沙箱 tmpdir，可指定工作区 cwd
 - 📦 **编译产物自举**：`bun build --compile` 后无 bun 环境的用户机器也能跑 `run_script`（spawn 自身，内嵌运行时执行外部脚本）
-- 🚀 **全平台分发（P5）**：6 平台（linux/darwin/windows × x64/arm64）编译产物 + 一行安装脚本（下载 → SHA256 校验 → 安装 → 加入 PATH）
+- 🚀 **全平台分发（P5）**：6 平台（linux/darwin/windows × x64/arm64）编译产物 + 一行安装脚本（下载 → SHA256 校验 → 安装为 bun-bot 命令 → 加入 PATH）
 
 ### 工具集
 
@@ -133,8 +133,8 @@ bun-bot "分析这个项目的结构并给出建议"
 │   └── bun-bot.ts      # CLI 分发（P4-6）：复用 src/cli.ts（init / --version / --help），透传 index.ts；bun link 全局安装
 ├── scripts/
 │   ├── build.sh        # 构建编译产物（本地与 CI 共用：先测试后编译 + SHA256 校验文件）
-│   ├── install.sh      # 用户安装脚本（macOS/Linux：检测平台 → 下载 → 校验 → 安装 → PATH 提示）
-│   └── install.ps1     # 用户安装脚本（Windows：下载 .exe → 校验 → 装到 %LOCALAPPDATA% → 加用户 PATH）
+│   ├── install.sh      # 用户安装脚本（macOS/Linux：检测平台 → 下载 → 校验 → 安装为 bun-bot → PATH 提示）
+│   └── install.ps1     # 用户安装脚本（Windows：下载 .exe → 校验 → 装为 bun-bot.exe → 加用户 PATH）
 ├── src/
 │   ├── tools.ts        # 工具注册表（新增工具在此注册；description 带 example usage；P4-7 readonly/ask 白名单）
 │   ├── cli.ts          # CLI 命令（P4-6：init / --version / --help，bin/bun-bot.ts 与 index.ts 编译产物共用）
@@ -178,7 +178,7 @@ bash scripts/build.sh
 
 - 构建逻辑收敛在 `scripts/build.sh`（本地与 CI 共用：bun install → bun test 先绿 → bun build --compile → 生成 `.sha256`）
 - `.github/workflows/build.yml` 原生矩阵 6 平台（linux/darwin/windows × x64/arm64），tag `v*` 自动发布 GitHub Release、手动触发只出 artifact
-- 用户安装脚本 `scripts/install.sh`（POSIX sh）/ `install.ps1`（PowerShell）：检测平台 → 下载 → **SHA256 校验（失败中止）** → 安装 → PATH
+- 用户安装脚本 `scripts/install.sh`（POSIX sh）/ `install.ps1`（PowerShell）：检测平台 → 下载 → **SHA256 校验（失败中止）** → 安装为 `bun-bot` / `bun-bot.exe`（命令统一不带平台后缀）→ PATH
 
 ### 开发约定与测试闸门
 

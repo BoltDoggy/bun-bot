@@ -7,6 +7,7 @@
  *   2. scripts/build.sh：产物命名（windows 带 .exe）、target 白名单、SHA256 生成、先测后编译
  *   3. scripts/install.sh：--help 用法、自动检测当前平台、--target 覆盖、
  *      端到端安装（本地 mock release 服务器：下载 → SHA256 校验 → 安装 → 可执行位）、
+ *      安装重命名为 bun-bot（Windows 为 bun-bot.exe，命令统一不带平台后缀）、
  *      指定版本走 /download/v<版本>/ 路径、windows 产物带 .exe、校验失败中止安装
  *   4. scripts/install.ps1：架构检测 + URL 拼接 + SHA256 校验 + 用户 PATH 添加
  *
@@ -153,17 +154,18 @@ test("install.sh 自动检测当前平台（无 --target 时）", async () => {
   const m = r.stdout.match(/\[install\] 平台: (\S+)/);
   expect(m).not.toBeNull();
   const target = m![1];
-  const file = `bun-bot-${target}` + (target.startsWith("windows") ? ".exe" : "");
-  expect(existsSync(join(dir, file))).toBe(true);
+  // 安装后的命令统一为 bun-bot（不带平台后缀；Windows 为 bun-bot.exe）
+  const bin = target.startsWith("windows") ? "bun-bot.exe" : "bun-bot";
+  expect(existsSync(join(dir, bin))).toBe(true);
 });
 
-test("install.sh 端到端：下载 → SHA256 校验 → 安装（可执行位已设置）", async () => {
+test("install.sh 端到端：下载 → SHA256 校验 → 安装为 bun-bot（可执行位已设置）", async () => {
   const dir = join(tmp, "bin-e2e");
   const r = await runInstall(["--dir", dir, "--target", "linux-x64", "--version", "latest"]);
   expect(r.exitCode).toBe(0);
   expect(r.stdout).toContain("校验 SHA256");
   expect(r.stdout).toContain("已安装");
-  const installed = join(dir, "bun-bot-linux-x64");
+  const installed = join(dir, "bun-bot");
   expect(existsSync(installed)).toBe(true);
   expect(readFileSync(installed, "utf8")).toBe(GOOD_CONTENT);
   // 可执行位（install -m 0755）：statSync().mode 的 x 位掩码（0o111）
@@ -177,14 +179,14 @@ test("install.sh --version 指定版本走 /download/v<版本>/ 路径", async (
   const dir = join(tmp, "bin-ver");
   const r = await runInstall(["--dir", dir, "--target", "darwin-arm64", "--version", "0.1.0"]);
   expect(r.exitCode).toBe(0);
-  expect(existsSync(join(dir, "bun-bot-darwin-arm64"))).toBe(true);
+  expect(existsSync(join(dir, "bun-bot"))).toBe(true);
 });
 
-test("install.sh windows target 下载 .exe 产物", async () => {
+test("install.sh windows target 下载 .exe 产物并安装为 bun-bot.exe", async () => {
   const dir = join(tmp, "bin-win");
   const r = await runInstall(["--dir", dir, "--target", "windows-x64"]);
   expect(r.exitCode).toBe(0);
-  expect(existsSync(join(dir, "bun-bot-windows-x64.exe"))).toBe(true);
+  expect(existsSync(join(dir, "bun-bot.exe"))).toBe(true);
 });
 
 test("install.sh SHA256 校验失败 → 安装中止（退出非零，不落盘）", async () => {
@@ -194,7 +196,7 @@ test("install.sh SHA256 校验失败 → 安装中止（退出非零，不落盘
     { BUN_BOT_BASE_URL: `http://localhost:${server!.port}/broken-releases` },
   );
   expect(r.exitCode).not.toBe(0);
-  expect(existsSync(join(dir, "bun-bot-linux-x64"))).toBe(false);
+  expect(existsSync(join(dir, "bun-bot"))).toBe(false);
 });
 
 // ---------- 4. install.ps1 ----------
@@ -206,5 +208,6 @@ test("install.ps1 存在：架构检测 + URL 拼接 + SHA256 校验 + 用户 PA
   expect(ps).toContain("download/v");
   expect(ps).toContain("Get-FileHash");
   expect(ps).toContain("SetEnvironmentVariable");
-  expect(ps).toContain("bun-bot-$target.exe");
+  expect(ps).toContain("bun-bot-$target.exe");  // Release 资产名（下载用）
+  expect(ps).toContain('$bin  = "bun-bot.exe"'); // 安装命令名（统一不带平台后缀）
 });
