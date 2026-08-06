@@ -1,9 +1,11 @@
 /**
- * context.ts — 系统提示词组装（P0）
+ * context.ts — 系统提示词组装（P0 + skills 索引）
  *
  * 结构（§4）：[身份] [能力] [项目] [记忆] [规则]
- * 目标：agent 启动时能准确说出"我是谁、项目结构、上次干了什么"。
+ * 目标：agent 启动时能准确说出"我是谁、项目结构、上次干了什么、有什么 skills 可用"。
  */
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import type { AgentState } from "./memory";
 import { workspace, STATE_FILE, MEMORY_FILE } from "./memory";
 
@@ -36,6 +38,33 @@ function memorySection(state: AgentState): string {
   return b.join("\n");
 }
 
+/**
+ * 从 skills/README.md 提取索引表格（`## 索引` 下的行），转成紧凑列表。
+ * 没有 skills/README.md 或没有索引表格时返回空串（老项目系统提示词保持不变）。
+ */
+export function skillsIndex(): string {
+  try {
+    const p = join(workspace(), "skills", "README.md");
+    if (!existsSync(p)) return "";
+    const lines = readFileSync(p, "utf8").split("\n");
+    const rows: string[] = [];
+    let inIndex = false;
+    for (const line of lines) {
+      if (line.startsWith("## ")) {
+        inIndex = line.startsWith("## 索引");
+        continue;
+      }
+      if (!inIndex || !line.trim().startsWith("|")) continue;
+      const cells = line.split("|").map((c) => c.trim()).filter((c) => c !== "");
+      if (cells.length < 2 || cells[0] === "skill" || cells[0] === "---") continue;
+      rows.push("  - " + cells[0] + ": " + cells[1] + "（自测: " + (cells[3] ?? "见 SKILL.md") + "）");
+    }
+    return rows.join("\n");
+  } catch {
+    return "";
+  }
+}
+
 /** 组装完整系统提示词。目标预算 < 5%（1M 上下文下 < 5 万 token）。 */
 export function buildSystemPrompt(ctx: ContextInput): string {
   const { state, project } = ctx;
@@ -50,6 +79,12 @@ export function buildSystemPrompt(ctx: ContextInput): string {
   b.push("- write_file: 写工作区文件，自动 git 快照 + diff 摘要。改自己代码就靠它。");
   b.push("- list_dir: 列目录（-a 显示隐藏文件、depth 限制递归深度）。");
   b.push("- run_bash: 执行 shell 命令，cwd 默认工作区，可跑 git / bun test 等。");
+  const sk = skillsIndex();
+  if (sk) {
+    b.push("");
+    b.push("可用 skills（组合操作：多步 + 有坑 + 会过时的操作，细节按需 read_file 加载 skills/<name>/SKILL.md）：");
+    b.push(sk);
+  }
   b.push("");
   b.push("[项目] 当前工作区: " + workspace());
   b.push(project);
@@ -60,6 +95,7 @@ export function buildSystemPrompt(ctx: ContextInput): string {
   b.push("- src/context.ts   系统提示词组装");
   b.push("- src/memory.ts    记忆读写（" + STATE_FILE + " / " + MEMORY_FILE + "）");
   b.push("- src/git.ts       write_file 前的 git 快照");
+  b.push("- skills/          组合操作库（skills/<name>/SKILL.md + 自测）");
   b.push("- tests/           self-test 用例（改完必须跑）");
   b.push("");
   b.push("[记忆] 上次任务的决策、踩坑、TODO（来自 " + STATE_FILE + " / " + MEMORY_FILE + "）：");
