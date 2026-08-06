@@ -22,7 +22,7 @@ if (!API_KEY) {
 
 const BASE_URL = "https://api.deepseek.com";
 const MODEL = "deepseek-v4-flash"; // 也可换成 deepseek-v4-pro
-const MAX_ITERATIONS = 15; // 防止 agent 无限循环
+const MAX_ITERATIONS = 150; // 防止 agent 无限循环
 
 // ---------- 命令行解析 ----------
 const args = process.argv.slice(2);
