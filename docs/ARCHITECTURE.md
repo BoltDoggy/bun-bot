@@ -14,7 +14,7 @@
 | 脚本超时 | 默认 30s（`DEFAULT_TIMEOUT_MS`），`timeoutMs` 可放开长任务 |
 | 工具输出上限 | 65536 字符（4K → 64KB），截断处带偏移信息可续读 |
 | read_file 硬上限 | 1MB（`MAX_READ_BYTES`） |
-| 记忆 | `AGENT_STATE.json` / `MEMORY.md` 跨会话持久化 |
+| 记忆 | `AGENT_STATE.json` / `MEMORY.md` 本地跨会话持久化（gitignore，不纳入版本控制，避免每次会话的写回噪音） |
 | 自修改安全 | `write_file` 落盘前自动 git 快照 + 返回行级 diff 摘要 |
 | 自测 | 12 用例 / 39 expect，零外部依赖（`bun test`） |
 
