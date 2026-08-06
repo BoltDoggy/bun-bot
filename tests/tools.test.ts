@@ -449,10 +449,11 @@ test("compressContext 超限时清最早的 tool 结果、保留消息结构（P
     { role: "tool", tool_call_id: "t2", content: big },
     { role: "user", content: "继续" },
   ];
-  const r = compressContext(msgs, 500);
-  expect(r.cleared).toBeGreaterThan(0);
-  expect(r.beforeTokens).toBeGreaterThan(500);
-  expect(r.afterTokens).toBeLessThan(r.beforeTokens);
+  // 预算 1600：原始 2610 tokens 超限，清 t1 后 1445 ≤ 1600 达标 → 只清最老的 1 条
+  const r = compressContext(msgs, 1600);
+  expect(r.cleared).toBe(1);
+  expect(r.beforeTokens).toBeGreaterThan(1600);
+  expect(r.afterTokens).toBeLessThanOrEqual(1600);
   // 结构保留：消息数不变、system 不被清、tool_call_id 关联还在
   expect(r.messages.length).toBe(msgs.length);
   expect(r.messages[0].content).toBe("system prompt");
@@ -461,7 +462,7 @@ test("compressContext 超限时清最早的 tool 结果、保留消息结构（P
   expect(r.messages[2].content.length).toBeLessThan(big.length);
   expect(r.messages[2].content).toContain("已清理");
   expect(r.messages[2].content).toContain("5000 字符");
-  // 更新的 tool 结果（t2）优先保留完整（先清最老的）
+  // 更新的 tool 结果（t2）保留完整（先清最老的）
   expect(r.messages[4].content).toBe(big);
 });
 
