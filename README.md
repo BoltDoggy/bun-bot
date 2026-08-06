@@ -88,10 +88,10 @@ bun-bot "分析这个项目的结构并给出建议"
 │   ├── git.ts          # git 安全快照（write_file + run_bash 写操作前）
 │   └── audit.ts        # 审计日志（落盘 .bunbot/AUDIT.log.jsonl）
 ├── skills/             # 组合操作库（SKILL.md + 实现 + 自测）
-├── tests/              # 74 用例 / 441 expect（M1 + skills + AGENTS.md + P2 + P3 + P4 全量闸门）
+├── tests/              # 73 用例 / 438 expect（M1 + skills + AGENTS.md + P2 + P3 + P4 全量闸门）
 ├── .bunbot/            # 状态目录（P4-4：AGENT_STATE / MEMORY / CHECKPOINT / AUDIT，gitignore，本地持久化）
 ├── blog.md             # agent 真实运行实录（自我进化过程）
-└── docs/               # 迭代计划与架构文档
+└── docs/               # 迭代进度与架构文档
 ```
 
 ## 配置项（环境变量 + 项目配置 .bunbot.json）
@@ -116,10 +116,10 @@ bun-bot "分析这个项目的结构并给出建议"
 ## 自测
 
 ```bash
-bun test   # 74 用例 / 441 expect：工具层 + 记忆层 + checkpoint + skills + AGENTS.md + P2（ACI/任务模式/预算/resume）+ P3（安全/闸门/审计）+ P4（通用化 9 项），零外部依赖
+bun test   # 73 用例 / 438 expect：工具层 + 记忆层 + checkpoint + skills + AGENTS.md + P2（ACI/任务模式/预算/resume）+ P3（安全/闸门/审计）+ P4（通用化 9 项），零外部依赖
 bun run skills/web-search/self-test.ts --online   # web-search skill 在线实测（可选）
 ```
 
 ## 迭代路线
 
-见 [docs/PLAN.md](./docs/PLAN.md)。M1 = P0+P1 ✅、skills ✅、AGENTS.md ✅、M2 = P2-1 ~ P2-4 ✅、**M3 = P3 质量与防护 ✅**、**M4 = P4 通用化 ✅（2026-08 完成）** —— bun-bot 现在可以在任意项目使用：`bun-bot init` 一键初始化，身份/关键文件/测试闸门按项目自适应，状态文件不污染仓库。
+见 [docs/README.md](./docs/README.md)（里程碑进度与迭代索引）。M1 = P0+P1 ✅、skills ✅、AGENTS.md ✅、M2 = P2-1 ~ P2-4 ✅、**M3 = P3 质量与防护 ✅**、**M4 = P4 通用化 ✅（2026-08 完成）** —— bun-bot 现在可以在任意项目使用：`bun-bot init` 一键初始化，身份/关键文件/测试闸门按项目自适应，状态文件不污染仓库。
