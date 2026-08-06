@@ -124,7 +124,9 @@ mkdir -p "$INSTALL_DIR"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
-echo "[install] 下载 $URL（进度条显示在下方）"
+# 注意：变量紧跟全角字符会触发 bash3.2/dash 的多字节变量名解析 bug（$URL（ → URL<字节>），
+# 必须用 ${URL} 花括号包裹（踩坑：本次新增进度提示时踩过，见 git 历史）。
+echo "[install] 下载 ${URL}（进度条显示在下方）"
 download "$URL" "$TMP/$FILE"
 
 # 校验文件可下载则强制校验；下载失败仅警告（避免无校验环境被卡死）。
@@ -133,7 +135,7 @@ if download "$SUM_URL" "$TMP/$FILE.sha256" 2>/dev/null; then
   echo "[install] 校验 SHA256..."
   verify_sum "$TMP" "$FILE.sha256"
 else
-  echo "警告：无法下载 SHA256 校验文件，跳过完整性校验（URL: $SUM_URL）" >&2
+  echo "警告：无法下载 SHA256 校验文件，跳过完整性校验（URL: ${SUM_URL}）" >&2
 fi
 
 # 安装为统一命令名 bun-bot（Windows: bun-bot.exe），不暴露平台后缀；
