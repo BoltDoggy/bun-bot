@@ -166,7 +166,7 @@ async function runRunScript(args: { code?: string; cwd?: string; timeoutMs?: num
   const file = join(tmpdir(), "bun-bot-" + Date.now() + "-" + Math.random().toString(36).slice(2) + ".ts");
   await Bun.write(file, args.code);
   try {
-    const r = await spawnWithTimeout(["bun", "run", file], { cwd }, timeout);
+    const r = await spawnWithTimeout([process.execPath, "run", file], { cwd }, timeout);
     return JSON.stringify({
       cwd,
       stdout: clipOutput(r.stdout),
