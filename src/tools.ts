@@ -16,6 +16,7 @@
  * P3-3 沙箱权限分级：路径（cwd / path）默认限制在工作区内（BUN_BOT_ALLOW_OUTSIDE_CWD=1
  *              可放行）；run_bash 危险命令黑名单（rm -rf /、git push、fork bomb 等）直接拒绝；
  *              BUN_BOT_PERMISSIONS=ask 时写操作命令需白名单（无人值守返回需确认提示）。
+ * 编译产物自举：run_script spawn 自身（process.execPath；源码时=bun → bun run file，编译产物 → ./bun-bot run file，index.ts 拦截用内嵌运行时执行外部脚本，无 bun 环境也能跑）。
  *
  * 新增工具：往 registry 数组里加一个 { def, run } 即可，agent 就能看到并调用它。
  */
