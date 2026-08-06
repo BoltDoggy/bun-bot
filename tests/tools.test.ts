@@ -1,9 +1,9 @@
 /**
- * tools.test.ts — M1 自测闸门（+ skills 层 + AGENT.md 项目指令）
+ * tools.test.ts — M1 自测闸门（+ skills 层 + AGENTS.md 项目指令）
  *
  * 覆盖：run_script（沙箱 cwd / 工作区 cwd）、read_file（偏移续读）、write_file（diff）、
  *       list_dir（-a）、run_bash、输出截断、记忆读写、skills 索引、web-search 解析器、
- *       AGENT.md 项目级指令加载与优先级。
+ *       AGENTS.md 项目级指令加载与优先级（含旧命名 AGENT.md 兼容回退）。
  *
  * 运行：bun test  或  bun run tests/tools.test.ts
  */
@@ -26,7 +26,8 @@ import {
   memoryPath,
   loadProjectContext,
   readAgentDirective,
-  AGENT_FILE,
+  AGENTS_FILE,
+  LEGACY_AGENT_FILE,
 } from "../src/memory";
 import { skillsIndex, buildSystemPrompt } from "../src/context";
 import { parseBingHtml, parseDdgHtml } from "../skills/web-search/search";
@@ -176,45 +177,66 @@ test("workspace() 返回测试沙箱", () => {
   expect(workspace()).toBe(tmp);
 });
 
-// ---------- AGENT.md 项目级指令 ----------
+// ---------- AGENTS.md 项目级指令 ----------
 
-test("AGENT.md 不存在时 readAgentDirective 返回 null，loadProjectContext 静默跳过", () => {
-  const p = join(tmp, AGENT_FILE);
-  if (existsSync(p)) rmSync(p);
+test("AGENTS.md 不存在时 readAgentDirective 返回 null，loadProjectContext 静默跳过", () => {
+  for (const name of [AGENTS_FILE, LEGACY_AGENT_FILE]) {
+    const p = join(tmp, name);
+    if (existsSync(p)) rmSync(p);
+  }
   expect(readAgentDirective()).toBeNull();
   const ctx = loadProjectContext();
-  expect(ctx).not.toContain("## " + AGENT_FILE);
+  expect(ctx).not.toContain("## " + AGENTS_FILE);
   expect(ctx).toContain("## README.md");
 });
 
-test("AGENT.md 存在时被加载，且排在 README 之前（优先级最高）", () => {
+test("AGENTS.md 存在时被加载，且排在 README 之前（优先级最高）", () => {
   const agentContent = [
     "# 项目指令",
     "",
     "- 禁止修改 docs/ 下的文件",
     "- 所有改动必须跑 `bun test` 验证",
   ].join("\n");
-  writeFileSync(join(tmp, AGENT_FILE), agentContent);
+  writeFileSync(join(tmp, AGENTS_FILE), agentContent);
 
   const directive = readAgentDirective();
-  expect(directive).toContain("禁止修改 docs/ 下的文件");
+  expect(directive).not.toBeNull();
+  expect(directive!.name).toBe(AGENTS_FILE); // 主命名优先
+  expect(directive!.content).toContain("禁止修改 docs/ 下的文件");
 
   const ctx = loadProjectContext();
-  const agentIdx = ctx.indexOf("## " + AGENT_FILE);
+  const agentIdx = ctx.indexOf("## " + AGENTS_FILE);
   const readmeIdx = ctx.indexOf("## README.md");
   expect(agentIdx).toBeGreaterThanOrEqual(0);
   expect(agentIdx).toBeLessThan(readmeIdx); // 指令在前
   expect(ctx).toContain("项目级指令");
   expect(ctx).toContain("禁止修改 docs/ 下的文件");
 
-  // 系统提示词声明 AGENT.md 的约束力
+  // 系统提示词声明 AGENTS.md 的约束力
   const prompt = buildSystemPrompt({ state: loadState(), project: ctx });
-  expect(prompt).toContain(AGENT_FILE);
+  expect(prompt).toContain(AGENTS_FILE);
   expect(prompt).toContain("约束力");
-  expect(prompt).toContain("以 " + AGENT_FILE + " 为准");
+  expect(prompt).toContain("以 " + AGENTS_FILE + " 为准");
 
   // 清理，避免影响其他用例
-  rmSync(join(tmp, AGENT_FILE));
+  rmSync(join(tmp, AGENTS_FILE));
+});
+
+test("兼容旧命名：只有 AGENT.md 时回退加载，name 标记实际文件", () => {
+  const legacyContent = "# 老项目指令\n\n- 用旧命名写的约定\n";
+  writeFileSync(join(tmp, LEGACY_AGENT_FILE), legacyContent);
+
+  const directive = readAgentDirective();
+  expect(directive).not.toBeNull();
+  expect(directive!.name).toBe(LEGACY_AGENT_FILE); // 回退到 AGENT.md
+  expect(directive!.content).toContain("用旧命名写的约定");
+
+  const ctx = loadProjectContext();
+  expect(ctx).toContain("## " + LEGACY_AGENT_FILE + "（项目级指令，优先级最高）");
+  expect(ctx).toContain("用旧命名写的约定");
+
+  // 清理
+  rmSync(join(tmp, LEGACY_AGENT_FILE));
 });
 
 // ---------- skills 层 ----------
