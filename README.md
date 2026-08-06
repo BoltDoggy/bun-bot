@@ -128,7 +128,7 @@ bun-bot "分析这个项目的结构并给出建议"
 ├── AGENTS.md            # 可选：项目级指令（存在时自动加载，优先级最高）
 ├── .github/
 │   └── workflows/
-│       └── build.yml   # P5 全平台构建：矩阵 6 平台（tag v* 发布 Release + 手动触发出 artifact）
+│       └── build.yml   # P5 全平台构建：矩阵 6 平台 + 独立 release job（tag v* 统一发布 + 手动触发出 artifact）
 ├── bin/
 │   └── bun-bot.ts      # CLI 分发（P4-6）：复用 src/cli.ts（init / --version / --help），透传 index.ts；bun link 全局安装
 ├── scripts/
@@ -147,7 +147,7 @@ bun-bot "分析这个项目的结构并给出建议"
 │   ├── git.ts          # git 安全快照（write_file + run_bash 写操作前）
 │   └── audit.ts        # 审计日志（落盘 .bunbot/AUDIT.log.jsonl）
 ├── skills/             # 组合操作库（SKILL.md + 实现 + 自测）
-├── tests/              # 87 用例 / 514 expect（M1 + skills + AGENTS.md + P2 + P3 + P4 + P5 全量闸门）
+├── tests/              # 87 用例 / 518 expect（M1 + skills + AGENTS.md + P2 + P3 + P4 + P5 全量闸门）
 ├── .bunbot/            # 状态目录（P4-4：AGENT_STATE / MEMORY / CHECKPOINT / AUDIT，gitignore，本地持久化）
 ├── blog.md             # agent 真实运行实录（自我进化过程）
 └── docs/               # 迭代进度与架构文档（面向自我迭代）
@@ -177,12 +177,12 @@ bash scripts/build.sh
 ```
 
 - 构建逻辑收敛在 `scripts/build.sh`（本地与 CI 共用：bun install → bun test 先绿 → bun build --compile → 生成 `.sha256`）
-- `.github/workflows/build.yml` 原生矩阵 6 平台（linux/darwin/windows × x64/arm64），tag `v*` 自动发布 GitHub Release、手动触发只出 artifact
+- `.github/workflows/build.yml` 原生矩阵 6 平台（linux/darwin/windows × x64/arm64），tag `v*` 自动发布 GitHub Release（独立 release job 等全部平台构建完合并统一发布，避免并发竞态）、手动触发只出 artifact
 - 用户安装脚本 `scripts/install.sh`（POSIX sh）/ `install.ps1`（PowerShell）：检测平台 → 下载 → **SHA256 校验（失败中止）** → 安装为 `bun-bot` / `bun-bot.exe`（命令统一不带平台后缀）→ PATH
 
 ### 开发约定与测试闸门
 
-- 改完必须跑 `bun test`：**87 用例 / 514 expect**，零外部依赖 —— 任何代码改动后必须全绿（P4 新增 10 个测试文件 + P5 新增 1 个 p5-release）
+- 改完必须跑 `bun test`：**87 用例 / 518 expect**，零外部依赖 —— 任何代码改动后必须全绿（P4 新增 10 个测试文件 + P5 新增 1 个 p5-release）
 - `bun run skills/web-search/self-test.ts --online`：web-search skill 在线实测（改了解析逻辑必须跑）
 - 新增能力必须补测试用例：`tests/` 是自我进化的验证闸门
 - 提交信息用 conventional commits（`feat:` / `fix:` / `docs:` / `refactor:`）
