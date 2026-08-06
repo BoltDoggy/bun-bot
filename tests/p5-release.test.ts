@@ -13,6 +13,10 @@
  * 端到端用 Bun.serve 起本地 HTTP 服务器 mock GitHub Releases（无需网络），
  * 通过 BUN_BOT_BASE_URL / BUN_BOT_TARGET 环境变量让安装脚本指向它。
  *
+ * 跨平台（P5 实测修正）：本文件在 GitHub Actions 6 平台矩阵上跑（build.sh 先测后编译），
+ * Windows runner 上：① 自动检测当前平台需识别 win32 → windows-x64.exe；② POSIX 可执行位
+ * （mode & 0o111）在 Windows 恒为 0，该断言仅 Unix 适用。
+ *
  * 运行：bun test
  */
 import { test, expect, beforeAll, afterAll } from "bun:test";
@@ -139,9 +143,11 @@ test("install.sh --help 输出用法且退出 0", async () => {
 
 test("install.sh 自动检测当前平台（无 --target 时）", async () => {
   const dir = join(tmp, "bin-auto");
-  const os = process.platform === "darwin" ? "darwin" : "linux";
+  // 与 install.sh 相同的平台映射：darwin / windows / linux（Windows runner 上跑 Git Bash）
+  const os = process.platform === "darwin" ? "darwin" : process.platform === "win32" ? "windows" : "linux";
   const arch = process.arch === "arm64" ? "arm64" : "x64";
-  const expected = `bun-bot-${os}-${arch}`;
+  const ext = os === "windows" ? ".exe" : "";
+  const expected = `bun-bot-${os}-${arch}${ext}`;
   const r = await runInstall(["--dir", dir]);
   expect(r.exitCode).toBe(0);
   expect(existsSync(join(dir, expected))).toBe(true);
@@ -157,7 +163,10 @@ test("install.sh 端到端：下载 → SHA256 校验 → 安装（可执行位�
   expect(existsSync(installed)).toBe(true);
   expect(readFileSync(installed, "utf8")).toBe(GOOD_CONTENT);
   // 可执行位（install -m 0755）：statSync().mode 的 x 位掩码（0o111）
-  expect(statSync(installed).mode & 0o111).not.toBe(0);
+  // Windows 无 POSIX 权限位（Git Bash 下恒为 0），该断言仅 Unix 适用（P5 实测）
+  if (process.platform !== "win32") {
+    expect(statSync(installed).mode & 0o111).not.toBe(0);
+  }
 });
 
 test("install.sh --version 指定版本走 /download/v<版本>/ 路径", async () => {
