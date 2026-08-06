@@ -2,7 +2,9 @@
  * config.ts — 项目级配置（P4 通用化，第 3 项）+ 全局配置（第 8 项）
  *
  * 优先级：环境变量 > 项目配置（.bunbot.json）> 全局配置（~/.bun-bot/config.json）> 默认值。
- * 字段：model / budget / permissions / testCommand / identity / stateDir / ignore / allowCommands
+ * 字段：model / budget / permissions / testCommand / identity / stateDir / ignore / allowCommands / skillsDir
+ *   - skillsDir   技能目录（P6-3 生态对齐：默认 [".agents/skills", "skills"] 双目录兼容，
+ *                  支持字符串或数组；.agents/skills 是 Claude Code 生态约定，frontmatter 自描述）
  *   - model        模型名（BUN_BOT_MODEL 可覆盖）
  *   - budget       上下文 token 预算（BUN_BOT_CONTEXT_BUDGET 可覆盖）
  *   - permissions  权限模式（BUN_BOT_PERMISSIONS 可覆盖）：
@@ -42,6 +44,8 @@ export interface BunBotConfig {
   ignore: string[];
   /** ask 模式白名单命令（整命令或前缀，命中放行；readonly 模式不适用） */
   allowCommands: string[];
+  /** 技能目录（P6-3 生态对齐：.agents/skills 生态约定 + skills 仓库内置，双目录兼容） */
+  skillsDir: string[];
 }
 
 /** 全局配置（~/.bun-bot/config.json）：全部可选，提供默认值兜底 */
@@ -55,6 +59,8 @@ export interface GlobalConfig {
   stateDir?: string;
   ignore?: string[];
   allowCommands?: string[];
+  /** 技能目录覆盖（默认双目录：.agents/skills + skills） */
+  skillsDir?: string[];
 }
 
 export const DEFAULT_CONFIG: BunBotConfig = {
@@ -66,6 +72,7 @@ export const DEFAULT_CONFIG: BunBotConfig = {
   stateDir: ".bunbot",
   ignore: [],
   allowCommands: [],
+  skillsDir: [".agents/skills", "skills"],
 };
 
 /** 全局配置目录：~/.bun-bot/（测试可用 HOME 环境变量覆盖） */
@@ -132,6 +139,13 @@ export function loadConfig(base: string): BunBotConfig {
   if (!cfg.identity.trim()) cfg.identity = DEFAULT_CONFIG.identity;
   if (!Array.isArray(cfg.ignore)) cfg.ignore = [];
   if (!Array.isArray(cfg.allowCommands)) cfg.allowCommands = [];
+  // P6-3：skillsDir 支持字符串或数组，过滤空项
+  if (typeof (cfg as { skillsDir?: unknown }).skillsDir === "string") {
+    cfg.skillsDir = [(cfg as { skillsDir: string }).skillsDir];
+  }
+  if (!Array.isArray(cfg.skillsDir)) cfg.skillsDir = DEFAULT_CONFIG.skillsDir;
+  cfg.skillsDir = cfg.skillsDir.map((s) => s.trim()).filter((s) => s !== "");
+  if (!cfg.skillsDir.length) cfg.skillsDir = DEFAULT_CONFIG.skillsDir;
   if (!cfg.stateDir.trim()) cfg.stateDir = DEFAULT_CONFIG.stateDir;
   return cfg;
 }

@@ -14,12 +14,15 @@
  *              让 agent 重启后能感知"上次长任务触发了多少次压缩"。
  * P3 安全（质量与防护）：[规则] 声明测试闸门（收尾自动跑测试、失败自动回滚）、
  *              run_bash 写操作自动快照、危险命令拒绝、路径限制工作区内、审计日志。
+ * P6-3 生态 skills 对齐：支持扫描 .agents/skills/（Claude Code 生态约定，SKILL.md 带 YAML
+ *             frontmatter 自描述 name/description），与仓库内置 skills/ 双目录兼容；
+ *             技能目录可 .bunbot.json 的 skillsDir 配置（默认双目录）。
  * P4 通用化（在其他项目使用 bun-bot）：[身份] 用 AGENT_IDENTITY 环境变量可配置
  *              （默认 bun-bot）；[项目] 关键文件按存在性动态生成，不再硬编码
  *              index.ts / src/ 等 bun-bot 自身文件结构 —— 任意项目（无 src/、无 index.ts）
  *              都能构建出准确的项目认知，不会出现误导性的文件路径。
  */
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import type { AgentState, ActivePlan } from "./memory";
 import { workspace, STATE_FILE, MEMORY_FILE, AGENTS_FILE, BUN_BOT_FILE } from "./memory";
@@ -56,6 +59,7 @@ export function keyFilesSection(base = workspace()): string {
   if (exists("src")) add("src/", "源码目录");
   if (exists("tests") || exists("test")) add("tests/", "测试目录（改完必须跑测试验证）");
   if (exists("skills")) add("skills/", "组合操作库（skills/<name>/SKILL.md + 自测）");
+  if (exists(".agents")) add(".agents/", "生态目录（Claude Code 约定：skills 技能等，P6-3）");
   if (exists("docs")) add("docs/", "文档（计划/架构/索引）");
   if (exists(".bunbot.json")) add(".bunbot.json", "项目级配置（P4：环境变量 > 配置 > 默认值）");
   if (!lines.length) add("（未识别到常见项目文件，先用 list_dir 看目录结构）", "");
@@ -101,6 +105,102 @@ function memorySection(state: AgentState): string {
     for (const w of state.contextWarnings) b.push("  - " + w);
   }
   return b.join("\n");
+}
+
+
+/**
+ * 配置的技能目录（P6-3 生态对齐）：默认双目录兼容 ——
+ *   .agents/skills   Claude Code 生态约定（SKILL.md + YAML frontmatter 自描述）
+ *   skills           仓库内置组合操作库（skills/README.md 索引表）
+ * 可用 .bunbot.json 的 skillsDir 覆盖（字符串或数组）。
+ */
+export function skillsDirs(): string[] {
+  const cfg = loadConfig(workspace()).skillsDir;
+  return Array.isArray(cfg) && cfg.length ? cfg : [".agents/skills", "skills"];
+}
+
+/** 解析 SKILL.md 开头的 YAML frontmatter（--- 包裹），提取 name / description（P6-3） */
+export function parseFrontmatter(md: string): { name?: string; description?: string } {
+  const m = /^---\r?\n([\s\S]*?)\r?\n---/.exec(md);
+  if (!m) return {};
+  try {
+    const data = Bun.YAML.parse(m[1]) as Record<string, unknown>;
+    return {
+      // frontmatter 里允许省略 name/description，此时由调用方用目录名/文件名兜底
+      name: typeof data.name === "string" ? data.name : undefined,
+      description: typeof data.description === "string" ? data.description : undefined,
+    };
+  } catch {
+    // frontmatter 不是合法 YAML 时静默降级，不影响其它技能加载
+    return {};
+  }
+}
+
+/** 扫描单个生态技能目录（.agents/skills 形态），返回技能清单（P6-3） */
+function scanEcosystemSkills(
+  base: string,
+  dir: string,
+): { name: string; description: string; path: string }[] {
+  const out: { name: string; description: string; path: string }[] = [];
+  const walk = (rel: string) => {
+    let entries: string[];
+    try {
+      entries = readdirSync(join(base, rel));
+    } catch {
+      return;
+    }
+    for (const e of entries) {
+      const childRel = rel ? rel + "/" + e : e;
+      const child = join(base, childRel);
+      let isDir = false;
+      try {
+        isDir = statSync(child).isDirectory();
+      } catch {
+        continue;
+      }
+      if (isDir) {
+        walk(childRel);
+      } else if (e.endsWith(".md")) {
+        // 只认目录型 <技能>/SKILL.md 与顶层单文件 <技能>.md，
+        // 跳过技能支持目录里的普通 md（如 foo/docs/readme.md），避免误判为技能
+        const isDirSkill = e === "SKILL.md";
+        const isFileSkill = !childRel.includes("/");
+        if (!isDirSkill && !isFileSkill) continue;
+        let md = "";
+        try {
+          md = readFileSync(child, "utf8");
+        } catch {
+          continue;
+        }
+        const { name, description } = parseFrontmatter(md);
+        const skillName = name ?? (isDirSkill ? rel : childRel.slice(0, -".md".length));
+        out.push({
+          name: skillName,
+          description: description ?? "（无描述，请直接读取技能文件）",
+          path: dir + "/" + childRel,
+        });
+      }
+    }
+  };
+  walk("");
+  return out;
+}
+
+/**
+ * 扫描配置的生态技能目录（默认 .agents/skills/），frontmatter 自描述，返回索引文本（P6-3）。
+ * 与 skillsIndex()（skills/README.md 索引）双目录兼容：两者都在 [能力] 区块展示。
+ */
+export function agentSkillsIndex(): string {
+  const rows: string[] = [];
+  for (const dir of skillsDirs()) {
+    if (dir === "skills") continue; // skills/ 走 README 索引（skillsIndex 处理）
+    const base = join(workspace(), dir);
+    if (!existsSync(base)) continue;
+    for (const s of scanEcosystemSkills(base, dir)) {
+      rows.push("  - " + s.name + ": " + s.description + "（技能文件: " + s.path + "）");
+    }
+  }
+  return rows.join("\n");
 }
 
 /**
@@ -159,10 +259,13 @@ export function buildSystemPrompt(ctx: ContextInput): string {
   b.push("- run_bash: 执行 shell 命令，cwd 默认工作区，可跑 git / bun test 等；写操作命令前自动 git 快照；危险命令会被拒绝。示例：{\\\"command\\\":\\\"bun test\\\"}、{\\\"command\\\":\\\"git status --short\\\"}");
   b.push("- update_plan: 更新任务计划（任务模式）。全量覆盖式：首轮创建（title + 分步 items），每完成一步提交完整计划并勾选 done，进度写回状态跨会话保存。示例：{\\\"title\\\":\\\"新增工具\\\",\\\"items\\\":[{\\\"text\\\":\\\"注册\\\",\\\"done\\\":false}]}");
   const sk = skillsIndex();
-  if (sk) {
+  const eco = agentSkillsIndex();
+  if (sk || eco) {
     b.push("");
-    b.push("可用 skills（组合操作：多步 + 有坑 + 会过时的操作，细节按需 read_file 加载 skills/<name>/SKILL.md）：");
-    b.push(sk);
+    b.push("可用 skills（组合操作：多步 + 有坑 + 会过时的操作，细节按需 read_file 加载对应 SKILL.md，路径见各条目）：");
+    b.push("  - skills/<name>/SKILL.md（仓库内置，索引见 skills/README.md）；.agents/skills/ 为生态技能（frontmatter 自描述）");
+    if (sk) b.push(sk);
+    if (eco) b.push(eco);
   }
   b.push("");
   b.push("[项目] 当前工作区: " + workspace());
