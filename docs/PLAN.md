@@ -2,11 +2,11 @@
 
 > 理论地基：`learn/`（结构化笔记 `learn/README.md` + 5 篇权威一手原文 `learn/raw/`）——提示词工程 × 上下文工程 × Harness 工程。
 > 本计划的差距分析、优先级与验收口径均来自那里的学习成果；计划修订时先回 `learn/` 校准。
-> 更新时间：2026-08 · 对齐 M1 + skills + learn + AGENTS.md 后的现状。
+> 更新时间：2026-08 · 对齐 M1 + skills + learn + AGENTS.md + P2-1 + P2-2 后的现状。
 
 ## 0. 为什么现在迭代
 
-bun-bot 已完成 M1（P0+P1）与 skills 能力：`index.ts`（163 行入口）+ `src/` 五模块 + `skills/` + `tests/`，自修改最小闭环成立。继续迭代的方向由 learn/ 三大主题校准：
+bun-bot 已完成 M1（P0+P1）与 skills 能力：`index.ts`（入口）+ `src/` 五模块 + `skills/` + `tests/`，自修改最小闭环成立。继续迭代的方向由 learn/ 三大主题校准：
 
 | 工程 | 回答的问题 | 对本体的意义 |
 | --- | --- | --- |
@@ -110,9 +110,9 @@ learn/                理论地基：5 篇权威一手材料 + 结构化笔记�
 **目标**：一次会话能自主完成多步骤的自我迭代；长任务不丢上下文、不爆预算。对齐 `learn/README.md` §4 的"三条最值得立刻做的"。
 
 - [x] **工具描述 ACI 化**：5 个工具的 `description` 补 example usage（如 `run_script` 给出"计算斐波那契"的调用示例），把工具描述当 prompt 打磨（工具设计五原则之五；**成本最低、收益最直接，先做**）✅（2026-08 完成：tools.ts 五工具 description 均带「示例：」JSON 参数形态 + 参数语义打磨；context.ts [能力] 区块同步 few-shot 双保险；测试新增 2 用例固化验收）
-- [ ] 任务模式：agent 首轮产出 plan，逐项勾选，进度写回 `AGENT_STATE.json`（= learn 的结构化笔记 / agentic memory，跨上下文重置续跑不丢目标）
+- [x] **任务模式**：agent 首轮产出 plan，逐项勾选，进度写回 `AGENT_STATE.json`（= learn 的结构化笔记 / agentic memory，跨上下文重置续跑不丢目标）✅（2026-08 完成：`update_plan` 工具全量覆盖式创建/勾选计划，`AgentState.activePlan` 持久化 + MEMORY.md 同步「当前任务计划」区块；`--self` 标志注入 [任务模式] 区块（先 plan 后执行、逐项勾选、未完成计划续跑提示）；主循环结束重载 state 防覆盖；测试新增 3 用例固化验收）
 - [ ] 上下文预算：`budget.ts` 做 token 计数，接近上限时压缩早期消息——**从最轻档 tool result clearing 做起**（工具结果用过即清，先保 recall 再迭代 precision；1M 也非无限，context rot 真实存在）
-- [ ] 长任务 checkpoint：`--resume` 从上次断点续跑（会话本地持久化，跨坐续跑）
+- [ ] 长任务 checkpoint：`--resume` 从上次断点续跑（会话本地持久化，跨坐续跑；任务模式的 activePlan 已是 checkpoint 的数据基础）
 
 **验收**：`bun run index.ts --self "给我加一个 read_file 工具并补文档"` 全流程无人干预完成；模拟 100 轮长任务不丢上下文、不爆预算。
 
@@ -131,10 +131,11 @@ learn/                理论地基：5 篇权威一手材料 + 结构化笔记�
 
 ```text
 [身份]  我是 bun-bot，一个自我认知为 Bun.js 运行时的 agent
-[能力]  工具契约：run_script / read_file / write_file / list_dir / run_bash（各带 example usage）
+[能力]  工具契约：run_script / read_file / write_file / list_dir / run_bash / update_plan（各带 example usage）
         + skills 索引：web-search 等（细节按需 read_file skills/<name>/SKILL.md）
 [项目]  文件树 + 架构图 + 关键文件位置 + 当前 MODE
-[记忆]  上次任务的决策、踩坑、TODO（来自 AGENT_STATE.json）
+[记忆]  上次任务的决策、踩坑、TODO、当前任务计划（来自 AGENT_STATE.json）
+[任务模式]（--self 时注入）先 plan 后执行、逐项勾选、未完成计划续跑
 [规则]  改工作区前必须 git 快照；改完必须跑 tests/；工具输出默认完整读取
 ```
 
@@ -152,11 +153,21 @@ learn/                理论地基：5 篇权威一手材料 + 结构化笔记�
   ],
   "pitfalls": ["Bun.spawn 的 stderr 要单独消费，否则管道会阻塞"],
   "todo": ["P1: 给 write_file 加 git 快照", "P2: 上下文预算摘要算法"],
-  "contextWarnings": ["超过 80 万 token 时系统提示词摘要会被压缩"]
+  "contextWarnings": ["超过 80 万 token 时系统提示词摘要会被压缩"],
+  "activePlan": {  // P2-2 任务模式：当前任务计划（跨会话续跑的锚点）
+    "title": "新增 read_file 工具并补文档",
+    "items": [
+      { "text": "在 tools.ts 注册 read_file", "done": true, "detail": "已注册" },
+      { "text": "补 README 文档", "done": false }
+    ],
+    "status": "active",
+    "createdAt": "2026-08-06T..",
+    "updatedAt": "2026-08-06T.."
+  }
 }
 ```
 
-> ✅ 格式已落地于 `src/memory.ts`（`AGENT_STATE.json` 实际含 `lastTask` / `lastSummary` / `lastRunAt` / `decisions` / `pitfalls` / `todo`）。
+> ✅ 格式已落地于 `src/memory.ts`（`AGENT_STATE.json` 实际含 `lastTask` / `lastSummary` / `lastRunAt` / `decisions` / `pitfalls` / `todo` / `activePlan`）。
 
 ## 6. 成功指标
 
@@ -165,7 +176,8 @@ learn/                理论地基：5 篇权威一手材料 + 结构化笔记�
 3. 重启后能引用上次会话的决策（记忆持久化生效）。✅
 4. 超过 100 轮工具调用的长任务不丢上下文、不爆预算（budget.ts + tool result clearing + checkpoint 生效）。⏳（P2）
 5. 跨会话能力不再只靠 lastSummary：修正过的操作能固化成带自测的 skill。✅（web-search v2 已落地）
-6. 工具描述 ACI 化：5 个工具 description 均带 example usage。✅（P2-1 已完成，2026-08）
+6. 工具描述 ACI 化：工具 description 均带 example usage。✅（P2-1 已完成，2026-08）
+7. `--self` 长任务可中断续跑：agent 首轮产出 plan，进度写回状态，重启后从上次断点继续。✅（P2-2 任务模式已完成，2026-08；`--resume` 全量 checkpoint 属下一项）
 
 ## 7. 风险与对策
 
@@ -184,7 +196,7 @@ learn/                理论地基：5 篇权威一手材料 + 结构化笔记�
 - ✅ **M1**（P0+P1）：agent 认识自己、能改自己的文件 —— 自修改最小闭环成立（2026-08 完成）。
 - ✅ **skills**：组合操作库落地，web-search v2 固化跨会话能力（2026-08 完成）。
 - ✅ **AGENTS.md 项目指令**：项目级契约落地 —— 存在时加载进 [项目] 最前（优先级高于 README/docs），[规则] 第 5 条声明约束力；缺失时静默跳过（2026-08 完成）。
-- ⏳ **M2**（P2）：`--self` 自主迭代 + budget.ts / tool result clearing / checkpoint（**P2-1 工具描述 ACI 化 ✅ 已完成**，2026-08）。
+- ⏳ **M2**（P2）：`--self` 自主迭代 + budget.ts / tool result clearing / checkpoint（**P2-1 工具描述 ACI 化 ✅** + **P2-2 任务模式 ✅** 已完成，2026-08；剩 budget.ts + `--resume` checkpoint）。
 - ⏳ **M3**（P3）：加固、回滚、测试闸门，形成可信的自修改循环，可长期自动演进。
 
 ---
