@@ -2,7 +2,7 @@
 
 > 理论地基：`learn/`（结构化笔记 `learn/README.md` + 5 篇权威一手原文 `learn/raw/`）——提示词工程 × 上下文工程 × Harness 工程。
 > 本计划的差距分析、优先级与验收口径均来自那里的学习成果；计划修订时先回 `learn/` 校准。
-> 更新时间：2026-08 · 对齐 M1 + skills + learn + AGENTS.md + P2-1 + P2-2 + P2-3 后的现状。
+> 更新时间：2026-08 · 对齐 M1 + skills + learn + AGENTS.md + P2-1 + P2-2 + P2-3 + P2-4 后的现状（**P2 全部完成**）。
 
 ## 0. 为什么现在迭代
 
@@ -30,7 +30,7 @@ learn/ 校准后的**新差距（差距即路线图，详见 `learn/README.md` �
 | --- | --- |
 | 工具描述无 example usage（工具设计五原则之五：prompt-engineering 工具描述） | **P2 第 1 项**（成本最低、收益最直接）✅ 已完成 |
 | 无 token 预算 / 无 compaction（context rot：token 越多回忆越差） | **P2 budget.ts + tool result clearing**（从最轻档压缩做起）✅ 已完成 |
-| 无 `--resume` / checkpoint（Claude Code 实践清单） | **P2 checkpoint**（P2-2 的 activePlan 已是数据基础） |
+| 无 `--resume` / checkpoint（Claude Code 实践清单） | **P2 checkpoint**（会话级消息历史持久化）✅ 已完成 |
 | 无测试闸门自动 revert（verify its work） | **P3 测试闸门** |
 | 无权限分级 / hooks（Claude Code 清单） | **P3 沙箱扩展** |
 
@@ -43,6 +43,7 @@ learn/ 校准后的**新差距（差距即路线图，详见 `learn/README.md` �
 - **长视野任务**：一次会话完成"新增一个工具 + 写文档 + 跑测试 + 收尾"的完整闭环。
 - **跨会话记忆**：状态文件持久化，重启后带着上次的决策继续。
 - **跨会话能力沉淀**：skills 组合操作库把「多步 + 有坑 + 会过时」的操作固化成 SKILL.md，不再依赖 lastSummary 里会丢细节的结论。
+- **断点续跑**：`--resume` 从上次会话 checkpoint 恢复完整消息历史，中断（Ctrl+C / 超迭代 / 崩溃）后不丢已执行的步骤。
 
 ## 2. 目标架构
 
@@ -50,7 +51,7 @@ learn/ 校准后的**新差距（差距即路线图，详见 `learn/README.md` �
 index.ts              入口：CLI 解析 + agent 主循环（保持轻量）
 src/tools.ts          工具定义与执行器（注册表模式，方便自增工具）
 src/context.ts        系统提示词组装：身份 + 项目 + 记忆 + 规则 + skills 索引
-src/memory.ts         记忆读写：AGENT_STATE.json / MEMORY.md
+src/memory.ts         记忆读写：AGENT_STATE.json / MEMORY.md / AGENT_CHECKPOINT.json（--resume）
 src/budget.ts         上下文 token 预算与超限压缩（P2-3：tool result clearing）✅ 已建
 src/git.ts            自修改前的安全提交与回滚
 skills/               组合操作库：skills/<name>/SKILL.md + 实现 + 样本 + 自测
@@ -59,7 +60,7 @@ learn/                理论地基：5 篇权威一手材料 + 结构化笔记�
 ```
 
 > 当前已落地：index.ts / tools.ts / context.ts / memory.ts / budget.ts / git.ts / skills/ / tests/ / learn/（见 [ARCHITECTURE.md](./ARCHITECTURE.md) 快照）。
-> 架构的理论依据：`learn/raw/anthropic-effective-context-engineering.md`（上下文工程，budget.ts 的来由）+ `anthropic-writing-tools-for-agents.md`（工具五原则，ACI 化的来由）。
+> 架构的理论依据：`learn/raw/anthropic-effective-context-engineering.md`（上下文工程，budget.ts 的来由）+ `anthropic-writing-tools-for-agents.md`（工具五原则，ACI 化的来由）+ `anthropic-claude-code-best-practices.md`（checkpoint/resume，P2-4 的来由）。
 
 ## 3. 分阶段计划
 
@@ -105,16 +106,16 @@ learn/                理论地基：5 篇权威一手材料 + 结构化笔记�
 
 **验收**：✅ `bun test` 17 用例全绿 + `bun run skills/web-search/self-test.ts --online` 在线实测 Bing 10 条；v1 全局正则解析 0 条的教训永久沉淀进 SKILL.md 踩坑清单。
 
-### P2 · 长任务与自迭代循环 ⏳（M2 进行中）
+### P2 · 长任务与自迭代循环 ✅（M2 已完成）
 
-**目标**：一次会话能自主完成多步骤的自我迭代；长任务不丢上下文、不爆预算。对齐 `learn/README.md` §4 的"三条最值得立刻做的"。
+**目标**：一次会话能自主完成多步骤的自我迭代；长任务不丢上下文、不爆预算、中断可续跑。对齐 `learn/README.md` §4 的"三条最值得立刻做的"。
 
 - [x] **工具描述 ACI 化**：5 个工具的 `description` 补 example usage（如 `run_script` 给出"计算斐波那契"的调用示例），把工具描述当 prompt 打磨（工具设计五原则之五；**成本最低、收益最直接，先做**）✅（2026-08 完成：tools.ts 五工具 description 均带「示例：」JSON 参数形态 + 参数语义打磨；context.ts [能力] 区块同步 few-shot 双保险；测试新增 2 用例固化验收）
 - [x] **任务模式**：agent 首轮产出 plan，逐项勾选，进度写回 `AGENT_STATE.json`（= learn 的结构化笔记 / agentic memory，跨上下文重置续跑不丢目标）✅（2026-08 完成：`update_plan` 工具全量覆盖式创建/勾选计划，`AgentState.activePlan` 持久化 + MEMORY.md 同步「当前任务计划」区块；`--self` 标志注入 [任务模式] 区块（先 plan 后执行、逐项勾选、未完成计划续跑提示）；主循环结束重载 state 防覆盖；测试新增 3 用例固化验收）
 - [x] **上下文预算**：`budget.ts` 做 token 计数，接近上限时压缩早期消息——**从最轻档 tool result clearing 做起**（工具结果用过即清，先保 recall 再迭代 precision；1M 也非无限，context rot 真实存在）✅（2026-08 完成：`src/budget.ts` 新建 `estimateTokens`（中英混合离线估算）/ `estimateMessagesTokens` / `compressContext`（最早的 tool 消息 content 摘要化：保留前缀 + 清理标记，消息结构不动、tool_call_id 关联保留，system 永不清理）；index.ts 主循环每轮检查预算、超限压缩并把告警写回 `AgentState.contextWarnings`（[记忆] 区块 + MEMORY.md 可见）；`BUN_BOT_CONTEXT_BUDGET` 可配（默认 120000）；测试新增 6 用例固化验收）
-- [ ] 长任务 checkpoint：`--resume` 从上次断点续跑（会话本地持久化，跨坐续跑；任务模式的 activePlan 已是 checkpoint 的数据基础）
+- [x] **长任务 checkpoint**：`--resume` 从上次断点续跑（会话级消息历史持久化，中断后恢复完整上下文继续；任务模式的 activePlan 是任务级锚点，checkpoint 是会话级全量恢复，两者互补）✅（2026-08 完成：`src/memory.ts` 新增 `AGENT_CHECKPOINT.json` —— `saveCheckpoint`（每次消息变更落盘，过滤 system：恢复时用最新 `buildSystemPrompt` 重建）/ `loadCheckpoint` / `clearCheckpoint`（任务正常完成时清除）/ `buildResumeMessages`（末尾 tool 消息补 user 兜底保证 API 合法 + 可选新任务追加）；index.ts `--resume` 标志（task 可空：不带任务直接续跑，带任务作为追加指令）；超迭代强制结束时 checkpoint 保留可续跑；测试新增 2 用例固化验收）
 
-**验收**：`bun run index.ts --self "给我加一个 read_file 工具并补文档"` 全流程无人干预完成；模拟 100 轮长任务不丢上下文、不爆预算。
+**验收**：`bun run index.ts --self "给我加一个 read_file 工具并补文档"` 全流程无人干预完成；模拟 100 轮长任务不丢上下文、不爆预算；`bun run index.ts --resume`（中断后）从上次断点恢复消息历史继续，任务完成自动清除 checkpoint。✅（P2-1 ~ P2-4 各自验收已勾选）
 
 ### P3 · 质量与防护 ⏳（M3 进行中）
 
@@ -165,25 +166,30 @@ learn/                理论地基：5 篇权威一手材料 + 结构化笔记�
     "updatedAt": "2026-08-06T.."
   }
 }
+// AGENT_CHECKPOINT.json  // P2-4 --resume 会话级 checkpoint（消息历史，不含 system；任务完成即清除）
+// {
+//   "savedAt": "2026-08-06T..",
+//   "messages": [ { "role": "user", "content": "任务：…" }, { "role": "assistant", "tool_calls": […] }, … ]
+// }
 ```
 
-> ✅ 格式已落地于 `src/memory.ts`（`AGENT_STATE.json` 实际含 `lastTask` / `lastSummary` / `lastRunAt` / `decisions` / `pitfalls` / `todo` / `contextWarnings` / `activePlan`）。
+> ✅ 格式已落地于 `src/memory.ts`（`AGENT_STATE.json` 实际含 `lastTask` / `lastSummary` / `lastRunAt` / `decisions` / `pitfalls` / `todo` / `contextWarnings` / `activePlan`；`AGENT_CHECKPOINT.json` 含 `savedAt` / `messages`）。
 
 ## 6. 成功指标
 
 1. `bun run index.ts --self` 能安全修改自身代码、跑测试、通过或自动回滚。⏳（P3 完成）
 2. 一次会话完成"新增工具 + 文档 + 测试 + 收尾"全流程，无需人工干预。✅（M1 已达成）
 3. 重启后能引用上次会话的决策（记忆持久化生效）。✅
-4. 超过 100 轮工具调用的长任务不丢上下文、不爆预算（budget.ts + tool result clearing ✅ 生效，checkpoint 待落地）。⏳（P2，剩 checkpoint）
+4. 超过 100 轮工具调用的长任务不丢上下文、不爆预算、中断可续跑。✅（P2-3 budget.ts + tool result clearing + P2-4 --resume checkpoint，2026-08）
 5. 跨会话能力不再只靠 lastSummary：修正过的操作能固化成带自测的 skill。✅（web-search v2 已落地）
 6. 工具描述 ACI 化：工具 description 均带 example usage。✅（P2-1 已完成，2026-08）
-7. `--self` 长任务可中断续跑：agent 首轮产出 plan，进度写回状态，重启后从上次断点继续。✅（P2-2 任务模式已完成，2026-08；`--resume` 全量 checkpoint 属下一项）
+7. `--self` 长任务可中断续跑：agent 首轮产出 plan，进度写回状态，重启后从上次断点继续。✅（P2-2 任务模式 + P2-4 --resume checkpoint 已完成，2026-08：activePlan 管任务级目标，checkpoint 管会话级上下文）
 
 ## 7. 风险与对策
 
 | 风险 | 对策 |
 | --- | --- |
-| 1M 也会被填满 + context rot（token 越多模型回忆越差） | `budget.ts` 摘要压缩 ✅ + **tool result clearing** ✅ + `--resume` 分段续跑（待建） |
+| 1M 也会被填满 + context rot（token 越多模型回忆越差） | `budget.ts` 摘要压缩 ✅ + **tool result clearing** ✅ + `--resume` checkpoint 分段续跑 ✅ |
 | 自修改破坏源码 | git 快照 + 测试闸门 + 自动 revert |
 | 全量塞文件反而稀释注意力 | 按需 `read_file` + 渐进披露，不全量灌入提示词（skills 索引同理：提示词只放一层索引） |
 | 工具权限过大 | 沙箱 `cwd` 限制 + 资源上限 + 权限分级 + 审计日志 |
@@ -196,7 +202,7 @@ learn/                理论地基：5 篇权威一手材料 + 结构化笔记�
 - ✅ **M1**（P0+P1）：agent 认识自己、能改自己的文件 —— 自修改最小闭环成立（2026-08 完成）。
 - ✅ **skills**：组合操作库落地，web-search v2 固化跨会话能力（2026-08 完成）。
 - ✅ **AGENTS.md 项目指令**：项目级契约落地 —— 存在时加载进 [项目] 最前（优先级高于 README/docs），[规则] 第 5 条声明约束力；缺失时静默跳过（2026-08 完成）。
-- ⏳ **M2**（P2）：`--self` 自主迭代 + budget.ts / tool result clearing / checkpoint（**P2-1 工具描述 ACI 化 ✅** + **P2-2 任务模式 ✅** + **P2-3 上下文预算 ✅** 已完成，2026-08；剩 `--resume` checkpoint）。
+- ✅ **M2**（P2）：`--self` 自主迭代 + budget.ts / tool result clearing / checkpoint —— **P2-1 工具描述 ACI 化 ✅ + P2-2 任务模式 ✅ + P2-3 上下文预算 ✅ + P2-4 --resume checkpoint ✅ 全部完成**（2026-08）。
 - ⏳ **M3**（P3）：加固、回滚、测试闸门，形成可信的自修改循环，可长期自动演进。
 
 ---
