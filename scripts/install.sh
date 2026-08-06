@@ -14,8 +14,8 @@
 #   BUN_BOT_TARGET      目标平台（默认自动检测；测试或手动指定用）
 #   BUN_BOT_BASE_URL    下载源（默认 https://github.com/$REPO/releases；测试可指向本地服务）
 #
-# 行为: 检测平台 → 下载 bun-bot-<target> 与 .sha256 → 校验 → 安装（重命名为 bun-bot，
-# Windows 为 bun-bot.exe，命令统一不带平台后缀）→ 提示 PATH。
+# 行为: 检测平台 → 下载 bun-bot-<target> 与 .sha256（下载显示进度条）→ 校验 → 安装
+# （重命名为 bun-bot，Windows 为 bun-bot.exe，命令统一不带平台后缀）→ 提示 PATH。
 set -eu
 
 REPO="${BUN_BOT_REPO:-BoltDoggy/bun-bot}"
@@ -71,13 +71,16 @@ case "$TARGET" in windows*) FILE="${FILE}.exe";; esac
 BIN="bun-bot"
 case "$TARGET" in windows*) BIN="bun-bot.exe";; esac
 
-# ---------- 下载（curl 优先，wget 兜底） ----------
+# ---------- 下载（curl 优先，wget 兜底；均显示下载进度条，走 stderr 不污染 -o 输出） ----------
 download() {
   url="$1"; out="$2"
   if command -v curl >/dev/null 2>&1; then
-    curl -fsSL --retry 3 "$url" -o "$out"
+    # --progress-bar：非 TTY（管道/重定向）也强制显示 \r#### 100.0% 进度条；
+    # 去掉 -s 后下载失败的错误信息也会正常展示
+    curl -fL --retry 3 --progress-bar "$url" -o "$out"
   elif command -v wget >/dev/null 2>&1; then
-    wget -q "$url" -O "$out"
+    # --show-progress 需要 wget >= 1.16（2014 年后的发行版均满足）
+    wget --show-progress "$url" -O "$out"
   else
     echo "错误：需要 curl 或 wget 来下载" >&2
     return 1
@@ -121,10 +124,11 @@ mkdir -p "$INSTALL_DIR"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
-echo "[install] 下载 $URL"
+echo "[install] 下载 $URL（进度条显示在下方）"
 download "$URL" "$TMP/$FILE"
 
-# 校验文件可下载则强制校验；下载失败仅警告（避免无校验环境被卡死）
+# 校验文件可下载则强制校验；下载失败仅警告（避免无校验环境被卡死）。
+# 进度输出在 stderr，此处 2>/dev/null 顺带吞掉校验文件的进度条（静默下载）。
 if download "$SUM_URL" "$TMP/$FILE.sha256" 2>/dev/null; then
   echo "[install] 校验 SHA256..."
   verify_sum "$TMP" "$FILE.sha256"
@@ -140,7 +144,7 @@ echo "[install] 已安装: $INSTALL_DIR/$BIN"
 
 # PATH 提示（已在 PATH 中则跳过）
 case ":$PATH:" in
-  *":$INSTALL_DIR:"*) ;;
+  *":$INSTALL_DIR:") ;;
   *)
     echo "提示：$INSTALL_DIR 不在 PATH，添加以下一行到 ~/.zshrc / ~/.bashrc 后重新打开终端："
     echo "  export PATH=\"$INSTALL_DIR:\$PATH\""
