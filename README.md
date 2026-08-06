@@ -152,7 +152,7 @@ bun-bot "分析这个项目的结构并给出建议"
 │   ├── git.ts          # git 安全快照（write_file + run_bash 写操作前）
 │   └── audit.ts        # 审计日志（落盘 .bunbot/AUDIT.log.jsonl）
 ├── skills/             # 组合操作库（SKILL.md + 实现 + 自测）
-├── tests/              # 91 用例 / 530 expect（M1 + skills + AGENTS.md + P2 + P3 + P4 + P5 + P6 全量闸门）
+├── tests/              # 104 用例 / 598 expect（M1 + skills + AGENTS.md + P2 + P3 + P4 + P5 + P6 全量闸门）
 ├── .bunbot/            # 状态目录（P4-4：AGENT_STATE / MEMORY / CHECKPOINT / AUDIT，gitignore，本地持久化）
 ├── blog.md             # agent 真实运行实录（自我进化过程）
 └── docs/               # 迭代进度与架构文档（面向自我迭代）
@@ -195,7 +195,7 @@ git push origin v0.4.1
 
 ### 开发约定与测试闸门
 
-- 改完必须跑 `bun test`：**87 用例 / 518 expect**，零外部依赖 —— 任何代码改动后必须全绿（P4 新增 10 个测试文件 + P5 新增 1 个 p5-release）
+- 改完必须跑 `bun test`：**104 用例 / 598 expect**，零外部依赖 —— 任何代码改动后必须全绿（P4 新增 10 个测试文件 + P5 新增 1 个 p5-release + P6 新增 3 个：p6-stream / p6-skills / p6-memory）
 - `bun run skills/web-search/self-test.ts --online`：web-search skill 在线实测（改了解析逻辑必须跑）
 - 新增能力必须补测试用例：`tests/` 是自我进化的验证闸门
 - 提交信息用 conventional commits（`feat:` / `fix:` / `docs:` / `refactor:`）

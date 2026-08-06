@@ -15,7 +15,7 @@
  * 运行：bun test
  */
 import { test, expect, beforeAll, afterAll } from "bun:test";
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -72,7 +72,7 @@ test("P6-4 syncMemoryFile 同步前截断 → MEMORY.md 只含最近 30 条", ()
   const s = loadState();
   s.decisions = Array.from({ length: 35 }, (_, i) => ({ when: "s" + i, what: "S" + i, why: "" }));
   syncMemoryFile(s);
-  const md = Bun.file(memoryPath()).text ? awaitBun(memoryPath()) : "";
+  const md = readFileSync(memoryPath(), "utf8");
   const count = (md.match(/^- \*\*s\d+\*\*/gm) || []).length;
   expect(count).toBe(MAX_MEMORY_ITEMS);
   // 被丢的最旧（s0）不在 MEMORY.md
@@ -103,8 +103,3 @@ test("P6-4 读入已有超长状态文件（loadState）同样截断（防御历
   expect(loaded.lastTask).toBe("历史遗留超长记忆");
   expect(existsSync(statePath())).toBe(true);
 });
-
-/** 读文件辅助（顶层 await 不允许在 bun:test 的 test 回调里直接 await，这里用同步读） */
-function awaitBun(p: string): string {
-  return require("node:fs").readFileSync(p, "utf8");
-}

@@ -3,7 +3,7 @@
 | 文档 | 说明 |
 | --- | --- |
 | ~~PLAN.md~~（已归档） | **历史迭代计划**：P0/P1/skills/AGENTS.md/P2-1 ~ P2-4/P3/**P4 通用化**/**P5 全平台分发** 全部完成并收官，已随 2026-08 清理删除（完整内容在 git 历史可追溯，如 commit `5d3fae4`） |
-| [ARCHITECTURE.md](./ARCHITECTURE.md) | 现状分析（as-is）：随代码演进更新，当前快照基于 M1（P0+P1）+ skills 能力 + AGENTS.md + P2-1 ~ P2-4 + P3 质量与防护 + **P4 通用化（可在任意项目使用）** + **P5 全平台分发（GitHub Actions 构建 + 安装脚本）** 全部落地后的实际代码 |
+| [ARCHITECTURE.md](./ARCHITECTURE.md) | 现状分析（as-is）：随代码演进更新，当前快照基于 M1（P0+P1）+ skills 能力 + AGENTS.md + P2-1 ~ P2-4 + P3 质量与防护 + **P4 通用化** + **P5 全平台分发** + **P6 生态对齐（流式默认 / AGENTS.md+BUN_BOT.md 拆分 / .agents/skills / 记忆防膨胀）** 全部落地后的实际代码 |
 
 ## 里程碑进度
 
@@ -61,7 +61,7 @@
   - P5-① GitHub Actions 矩阵构建：`.github/workflows/build.yml` —— 6 平台（ubuntu-latest → linux-x64 / ubuntu-24.04-arm → linux-arm64 / macos-13 → darwin-x64 / macos-latest → darwin-arm64 / windows-latest → windows-x64 / windows-11-arm → windows-arm64 实验性），tag `v*` 触发发布 GitHub Release（独立 release job 下载合并后统一发布一次，每个产物附 `.sha256`，避免并发竞态）、workflow_dispatch 手动触发只出 artifact；构建逻辑收敛在 `scripts/build.sh`（bun install → **bun test 先绿** → `bun build --compile` → 生成 SHA256）
   - P5-② 用户安装脚本：`scripts/install.sh`（POSIX sh，macOS/Linux：检测平台 → 下载（latest 或指定版本）→ SHA256 校验（失败中止）→ 装到 ~/.local/bin → PATH 提示）+ `scripts/install.ps1`（Windows：下载 .exe → Get-FileHash 校验 → 装到 %LOCALAPPDATA%\bun-bot\bin → 加用户 PATH）；支持 `BUN_BOT_REPO` / `BUN_BOT_VERSION` / `BUN_BOT_BASE_URL` 等环境变量覆盖
   - P5-③ 端到端验证：`tests/p5-release.test.ts`（10 用例 / 50 expect）—— workflow 矩阵与触发断言 + install.sh 用本地 `Bun.serve` mock release 服务器跑真实下载 → 校验 → 安装（可执行位用 `statSync().mode & 0o111`）+ 校验失败中止 + windows .exe 命名 + install.ps1 关键逻辑断言
-  - 自测: `bun test` **87 用例 / 518 expect 全绿**；`bash scripts/build.sh` 实测产出 `dist/bun-bot-darwin-arm64`（61MB）+ `.sha256`，`shasum -c` 通过，产物 `run` 子命令自举正常（embedded-runtime-ok 1.3.14）
+  - 自测: `bun test` **104 用例 / 598 expect 全绿**；`bash scripts/build.sh` 实测产出 `dist/bun-bot-darwin-arm64`（61MB）+ `.sha256`，`shasum -c` 通过，产物 `run` 子命令自举正常（embedded-runtime-ok 1.3.14）
 
 ## 与主 README 的关系
 

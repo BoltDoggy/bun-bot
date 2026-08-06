@@ -25,7 +25,7 @@
 
 ## 测试闸门（改完必须跑）
 
-- `bun test`：91 用例 / 530 expect（2026-08 P6 后），零外部依赖 —— 任何代码改动后必须全绿（P4 新增 10 个测试文件：p4-context / p4-config / p4-state-dir / p4-gate / p4-cli / p4-readonly / p4-global / p4-filetree / p4-interactive / p4-bootstrap；P5 新增 1 个：p5-release；P6 新增 1 个：p6-stream —— release 工作流 + 安装脚本端到端（本地 mock release 服务器，无需网络））
+- `bun test`：104 用例 / 598 expect（2026-08 P6 后），零外部依赖 —— 任何代码改动后必须全绿（P4 新增 10 个测试文件：p4-context / p4-config / p4-state-dir / p4-gate / p4-cli / p4-readonly / p4-global / p4-filetree / p4-interactive / p4-bootstrap；P5 新增 1 个：p5-release；P6 新增 3 个：p6-stream / p6-skills / p6-memory —— release 工作流 + 安装脚本端到端（本地 mock release 服务器，无需网络））
 - `bun run skills/web-search/self-test.ts --online`：web-search skill 在线实测（改了解析逻辑必须跑）
 - 新增能力必须补测试用例：`tests/` 是自我进化的验证闸门
 
