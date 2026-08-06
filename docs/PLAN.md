@@ -28,7 +28,7 @@ learn/ 校准后的**新差距（差距即路线图，详见 `learn/README.md` �
 
 | learn/ 指出的差距 | 对应计划 |
 | --- | --- |
-| 工具描述无 example usage（工具设计五原则之五：prompt-engineering 工具描述） | **P2 第 1 项**（成本最低、收益最直接） |
+| 工具描述无 example usage（工具设计五原则之五：prompt-engineering 工具描述） | **P2 第 1 项**（成本最低、收益最直接）✅ 已完成 |
 | 无 token 预算 / 无 compaction（context rot：token 越多回忆越差） | **P2 budget.ts + tool result clearing**（从最轻档压缩做起） |
 | 无 `--resume` / checkpoint（Claude Code 实践清单） | **P2 checkpoint** |
 | 无测试闸门自动 revert（verify its work） | **P3 测试闸门** |
@@ -109,7 +109,7 @@ learn/                理论地基：5 篇权威一手材料 + 结构化笔记�
 
 **目标**：一次会话能自主完成多步骤的自我迭代；长任务不丢上下文、不爆预算。对齐 `learn/README.md` §4 的"三条最值得立刻做的"。
 
-- [ ] **工具描述 ACI 化**：5 个工具的 `description` 补 example usage（如 `run_script` 给出"计算斐波那契"的调用示例），把工具描述当 prompt 打磨（工具设计五原则之五；**成本最低、收益最直接，先做**）
+- [x] **工具描述 ACI 化**：5 个工具的 `description` 补 example usage（如 `run_script` 给出"计算斐波那契"的调用示例），把工具描述当 prompt 打磨（工具设计五原则之五；**成本最低、收益最直接，先做**）✅（2026-08 完成：tools.ts 五工具 description 均带「示例：」JSON 参数形态 + 参数语义打磨；context.ts [能力] 区块同步 few-shot 双保险；测试新增 2 用例固化验收）
 - [ ] 任务模式：agent 首轮产出 plan，逐项勾选，进度写回 `AGENT_STATE.json`（= learn 的结构化笔记 / agentic memory，跨上下文重置续跑不丢目标）
 - [ ] 上下文预算：`budget.ts` 做 token 计数，接近上限时压缩早期消息——**从最轻档 tool result clearing 做起**（工具结果用过即清，先保 recall 再迭代 precision；1M 也非无限，context rot 真实存在）
 - [ ] 长任务 checkpoint：`--resume` 从上次断点续跑（会话本地持久化，跨坐续跑）
@@ -131,7 +131,7 @@ learn/                理论地基：5 篇权威一手材料 + 结构化笔记�
 
 ```text
 [身份]  我是 bun-bot，一个自我认知为 Bun.js 运行时的 agent
-[能力]  工具契约：run_script / read_file / write_file / list_dir / run_bash
+[能力]  工具契约：run_script / read_file / write_file / list_dir / run_bash（各带 example usage）
         + skills 索引：web-search 等（细节按需 read_file skills/<name>/SKILL.md）
 [项目]  文件树 + 架构图 + 关键文件位置 + 当前 MODE
 [记忆]  上次任务的决策、踩坑、TODO（来自 AGENT_STATE.json）
@@ -165,7 +165,7 @@ learn/                理论地基：5 篇权威一手材料 + 结构化笔记�
 3. 重启后能引用上次会话的决策（记忆持久化生效）。✅
 4. 超过 100 轮工具调用的长任务不丢上下文、不爆预算（budget.ts + tool result clearing + checkpoint 生效）。⏳（P2）
 5. 跨会话能力不再只靠 lastSummary：修正过的操作能固化成带自测的 skill。✅（web-search v2 已落地）
-6. 工具描述 ACI 化：5 个工具 description 均带 example usage。⏳（P2 第 1 项）
+6. 工具描述 ACI 化：5 个工具 description 均带 example usage。✅（P2-1 已完成，2026-08）
 
 ## 7. 风险与对策
 
@@ -184,7 +184,7 @@ learn/                理论地基：5 篇权威一手材料 + 结构化笔记�
 - ✅ **M1**（P0+P1）：agent 认识自己、能改自己的文件 —— 自修改最小闭环成立（2026-08 完成）。
 - ✅ **skills**：组合操作库落地，web-search v2 固化跨会话能力（2026-08 完成）。
 - ✅ **AGENTS.md 项目指令**：项目级契约落地 —— 存在时加载进 [项目] 最前（优先级高于 README/docs），[规则] 第 5 条声明约束力；缺失时静默跳过（2026-08 完成）。
-- ⏳ **M2**（P2）：`--self` 自主迭代 + 工具描述 ACI 化 + budget.ts / tool result clearing / checkpoint。
+- ⏳ **M2**（P2）：`--self` 自主迭代 + budget.ts / tool result clearing / checkpoint（**P2-1 工具描述 ACI 化 ✅ 已完成**，2026-08）。
 - ⏳ **M3**（P3）：加固、回滚、测试闸门，形成可信的自修改循环，可长期自动演进。
 
 ---
