@@ -24,6 +24,7 @@ import { currentHead, isGitRepo } from "./src/git";
 import { enforceTestGate } from "./src/gate";
 import { appendAudit } from "./src/audit";
 import { driveInteractive, isExitInput } from "./src/interactive";
+import { printHelp, runInit, VERSION } from "./src/cli";
 import {
   estimateMessagesTokens,
   compressContext,
@@ -42,6 +43,26 @@ if (process.argv[2] === "run" && process.argv[3]) {
       process.exit(1);
     });
   process.exit(0);
+}
+
+// ---------- CLI 命令（init / --version / --help，与 bin/bun-bot.ts 对齐） ----------
+// 这些命令不依赖 DEEPSEEK_API_KEY，必须在 API key 检查之前拦截 —— 编译产物（bun build --compile）同样支持。
+const cliArgs = process.argv.slice(2);
+if (cliArgs.includes("--help") || cliArgs.includes("-h")) {
+  printHelp();
+  process.exit(0);
+}
+if (cliArgs.includes("--version") || cliArgs.includes("-v")) {
+  console.log("bun-bot v" + VERSION);
+  process.exit(0);
+}
+if (cliArgs[0] === "init") {
+  runInit();
+  process.exit(0);
+}
+if (cliArgs.length === 0) {
+  printHelp();
+  process.exit(1);
 }
 
 // P4-8：API key fallback —— DEEPSEEK_API_KEY 未设置时用全局配置 ~/.bun-bot/config.json
