@@ -2,7 +2,7 @@
 
 > 理论地基：`learn/`（结构化笔记 `learn/README.md` + 5 篇权威一手原文 `learn/raw/`）——提示词工程 × 上下文工程 × Harness 工程。
 > 本计划的差距分析、优先级与验收口径均来自那里的学习成果；计划修订时先回 `learn/` 校准。
-> 更新时间：2026-08 · 对齐 M1 + skills + learn 后的现状。
+> 更新时间：2026-08 · 对齐 M1 + skills + learn + AGENT.md 后的现状。
 
 ## 0. 为什么现在迭代
 
@@ -92,7 +92,7 @@ learn/                理论地基：5 篇权威一手材料 + 结构化笔记�
 - [x] 超时可配（`timeoutMs`，默认 30s → 长任务可放开）
 - [x] 输出上限 4000 → 65536，截断处带偏移信息
 
-**验收**：✅ `bun run index.ts "把 index.ts 顶部的注释改成两行"` 真实落盘 + diff 可见 + `bun test` 15 用例全绿。
+**验收**：✅ `bun run index.ts "把 index.ts 顶部的注释改成两行"` 真实落盘 + diff 可见 + `bun test` 17 用例全绿。
 
 ### skills · 组合操作库 —— 跨会话能力沉淀 ✅（已完成）
 
@@ -103,7 +103,7 @@ learn/                理论地基：5 篇权威一手材料 + 结构化笔记�
 - [x] **不加新工具**：加载用现有 `read_file` 按需读取，保持工具集精简
 - [x] skill 必须带版本号 + 自测命令，纳入测试闸门（`bun test` 含解析器用例）
 
-**验收**：✅ `bun test` 15 用例全绿 + `bun run skills/web-search/self-test.ts --online` 在线实测 Bing 10 条；v1 全局正则解析 0 条的教训永久沉淀进 SKILL.md 踩坑清单。
+**验收**：✅ `bun test` 17 用例全绿 + `bun run skills/web-search/self-test.ts --online` 在线实测 Bing 10 条；v1 全局正则解析 0 条的教训永久沉淀进 SKILL.md 踩坑清单。
 
 ### P2 · 长任务与自迭代循环 ⏳（M2 进行中）
 

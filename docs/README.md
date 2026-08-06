@@ -11,7 +11,7 @@
   - P0: 结构化自我认知 + `AGENT_STATE.json` / `MEMORY.md` 跨会话记忆，启动加载项目上下文
   - P1: 工具注册表 `src/tools.ts`（run_script 升级 + read_file / write_file / list_dir / run_bash，共 5 工具）
   - 验收: `bun run index.ts "把 index.ts 顶部的注释改成两行"` 真实落盘 + diff 可见 + 测试全绿
-  - 自测: `bun test` 15 用例全绿（工具层 + 记忆层 + skills 层，零外部依赖）
+  - 自测: `bun test` 17 用例全绿（工具层 + 记忆层 + skills 层，零外部依赖）
 - ✅ **skills 组合操作库（附加能力）已完成**：跨会话能力沉淀
   - `skills/<name>/SKILL.md` 固化「多步 + 有坑 + 会过时」的操作，索引进 [能力] 区块，细节按需 read_file
   - 首个 skill：`web-search` v2（Bing 主路径 + DDG 降级 + 离线样本 + 自测；v1 全局正则被真实结构打脸的教训已沉淀）
