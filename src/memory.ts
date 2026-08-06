@@ -1,16 +1,21 @@
 /**
- * memory.ts — 记忆读写（P0 + P2-2 任务模式 + P2-3 预算告警）
+ * memory.ts — 记忆读写（P0 + P2-2 任务模式 + P2-3 预算告警 + P2-4 checkpoint）
  *
  * 数据：
- *   AGENT_STATE.json  机器可读状态（决策 / 踩坑 / TODO / 上次任务 / 当前任务计划 / 上下文预算告警）
- *   MEMORY.md         人类可读版，由 AGENT_STATE.json 同步生成
+ *   AGENT_STATE.json       机器可读状态（决策 / 踩坑 / TODO / 上次任务 / 当前任务计划 / 上下文预算告警）
+ *   MEMORY.md              人类可读版，由 AGENT_STATE.json 同步生成
+ *   AGENT_CHECKPOINT.json  会话级 checkpoint（--resume 断点续跑）：当前会话的消息历史
  *
  * P2-2 任务模式：AgentState.activePlan 持久化当前任务的 plan（首轮产出、逐项勾选），
- *               进度跨会话保存 —— 中断/重启后可从上次断点继续（checkpoint 的基础）。
+ *               进度跨会话保存 —— 中断/重启后可从上次断点继续（checkpoint 的目标锚点）。
  * P2-3 上下文预算：AgentState.contextWarnings 记录每次超限压缩告警（保留最近 10 条），
  *               重启后 [记忆] 区块可见 —— agent 能感知长任务触发了多少次压缩。
+ * P2-4 --resume checkpoint：把当前会话的消息历史（不含 system）落盘 AGENT_CHECKPOINT.json，
+ *               每次消息变更即保存；--resume 启动时加载历史、重建 system 提示词继续跑，
+ *               任务正常完成时清除。与 activePlan（任务级锚点）互补：checkpoint 是会话级
+ *               全量上下文恢复，中断（Ctrl+C / 超迭代 / 崩溃）后不丢已执行的步骤。
  *
- * 注意：两个记忆文件在 .gitignore 中（每次会话写回会产生噪音），
+ * 注意：三个记忆文件都在 .gitignore 中（每次会话写回会产生噪音），
  *       仅本地持久化，不纳入版本控制。
  *
  * 项目级指令：
@@ -24,13 +29,17 @@ import {
   existsSync,
   readdirSync,
   readFileSync,
+  rmSync,
   statSync,
   writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
+import type { ChatMessage } from "./budget";
 
 export const STATE_FILE = "AGENT_STATE.json";
 export const MEMORY_FILE = "MEMORY.md";
+/** 会话级 checkpoint 文件（--resume 断点续跑的消息历史） */
+export const CHECKPOINT_FILE = "AGENT_CHECKPOINT.json";
 /** 项目级指令文件（多 agent 工具链通用约定，唯一命名） */
 export const AGENTS_FILE = "AGENTS.md";
 
@@ -45,6 +54,10 @@ export function statePath(): string {
 
 export function memoryPath(): string {
   return join(workspace(), MEMORY_FILE);
+}
+
+export function checkpointPath(): string {
+  return join(workspace(), CHECKPOINT_FILE);
 }
 
 export interface Decision {
@@ -169,6 +182,71 @@ export function syncMemoryFile(state: AgentState): void {
     for (const w of state.contextWarnings) b.push("- " + w);
   }
   writeFileSync(memoryPath(), b.join("\n") + "\n", "utf8");
+}
+
+// ---------- checkpoint（P2-4：--resume 会话级断点续跑） ----------
+
+interface CheckpointData {
+  savedAt: string;
+  /** 会话消息历史（不含 system：恢复时用最新的 buildSystemPrompt 重建） */
+  messages: ChatMessage[];
+}
+
+/**
+ * 保存会话 checkpoint：把当前消息历史（不含 system）落盘 AGENT_CHECKPOINT.json。
+ * 每次消息变更（assistant 回复 / 工具结果入队）后调用 —— 中断（Ctrl+C / 超迭代 / 崩溃）
+ * 后 --resume 可恢复到最后一次消息变更的状态。
+ * system 消息不存：恢复时 system 提示词用最新 buildSystemPrompt 重建
+ * （state / project 可能已变，旧 system 会过时）。
+ */
+export function saveCheckpoint(messages: ChatMessage[]): void {
+  const data: CheckpointData = {
+    savedAt: new Date().toISOString(),
+    messages: messages.filter((m) => m.role !== "system"),
+  };
+  writeFileSync(checkpointPath(), JSON.stringify(data, null, 2) + "\n", "utf8");
+}
+
+/** 读取会话 checkpoint；不存在或损坏时返回 null */
+export function loadCheckpoint(): ChatMessage[] | null {
+  try {
+    if (!existsSync(checkpointPath())) return null;
+    const raw = JSON.parse(readFileSync(checkpointPath(), "utf8")) as Partial<CheckpointData>;
+    if (!Array.isArray(raw.messages) || raw.messages.length === 0) return null;
+    return raw.messages;
+  } catch {
+    return null;
+  }
+}
+
+/** 清除会话 checkpoint（任务正常完成时调用，避免残留干扰下次运行） */
+export function clearCheckpoint(): void {
+  try {
+    if (existsSync(checkpointPath())) rmSync(checkpointPath());
+  } catch {
+    // 清除失败不致命：下次 loadCheckpoint 读旧数据时会走 --resume 提示
+  }
+}
+
+/**
+ * 组装 --resume 恢复后的消息序列：checkpoint 历史 + （可选）新 task 追加。
+ * 若历史以 role="tool" 结尾（中断发生在工具结果入队后、下一轮 assistant 回复前），
+ * 补一条 user 消息保证对话结构合法 —— API 要求 tool 消息必须跟在 assistant
+ * 的 tool_calls 之后，直接以 tool 结尾可能被拒。
+ */
+export function buildResumeMessages(checkpoint: ChatMessage[], newTask?: string): ChatMessage[] {
+  const messages = checkpoint.map((m) => ({ ...m }));
+  const last = messages[messages.length - 1];
+  if (last && last.role === "tool") {
+    messages.push({
+      role: "user",
+      content: "（checkpoint 恢复：对话在工具调用结果之后中断，请基于已有上下文继续执行当前任务。）",
+    });
+  }
+  if (newTask && newTask.trim()) {
+    messages.push({ role: "user", content: newTask });
+  }
+  return messages;
 }
 
 // ---------- 项目上下文 ----------
