@@ -31,3 +31,6 @@ MEMORY.md
 AGENT_CHECKPOINT.json
 # P3-4 审计日志（每次工具调用入参/出参摘要，持续追加，仅本地持久化）
 AUDIT.log.jsonl
+
+# P4-4：状态目录（AGENT_STATE / MEMORY / CHECKPOINT / AUDIT 移入 .bunbot/，gitignore 自动追加）
+.bunbot/

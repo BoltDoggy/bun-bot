@@ -1,8 +1,9 @@
 /**
  * audit.ts — 审计日志（P3-4：每次工具调用的入参/出参摘要落盘）
  *
- * 落盘 `AUDIT.log.jsonl`（工作区根，gitignore —— 每轮会话都会产生新行，
- * 不纳入版本控制）。每次 executeTool 后由主循环追加一条记录：
+ * 落盘 `.bunbot/AUDIT.log.jsonl`（P4-4：状态目录默认 .bunbot/，gitignore ——
+ * 每轮会话都会产生新行，不纳入版本控制，不污染用户仓库 git status）。
+ * 每次 executeTool 后由主循环追加一条记录：
  *   时间 / 轮次 / 工具名 / 入参摘要 / 出参摘要 / exitCode
  * appendAudit 内部做防御性截断（入参 400 / 出参 500 字符），
  * 无论调用方是否截断，审计文件都不会无限膨胀；完整结果仍回传模型，
@@ -10,13 +11,13 @@
  */
 import { appendFileSync, existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { workspace } from "./memory";
+import { stateDir, ensureStateDir, ensureStateIgnored } from "./memory";
 
-/** 审计日志文件名（gitignore） */
+/** 审计日志文件名（gitignore，位于状态目录 .bunbot/ 下） */
 export const AUDIT_FILE = "AUDIT.log.jsonl";
 
 export function auditPath(): string {
-  return join(workspace(), AUDIT_FILE);
+  return join(stateDir(), AUDIT_FILE);
 }
 
 export interface AuditEntry {
@@ -38,6 +39,8 @@ function clip(s: string, n: number): string {
 /** 追加一条审计记录（JSONL：每行一个 JSON 对象；入参/出参防御性截断） */
 export function appendAudit(entry: AuditEntry): void {
   try {
+    ensureStateDir();
+    ensureStateIgnored();
     appendFileSync(
       auditPath(),
       JSON.stringify({

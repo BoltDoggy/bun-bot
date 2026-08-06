@@ -1,13 +1,13 @@
 # 现状分析（as-is）
 
-基于对 index.ts / src/ / skills/ / tests/ 的实际阅读与统计，更新于 **M1（P0+P1）+ skills 能力 + AGENTS.md 项目指令 + P2-1 ~ P2-4 + P3 质量与防护（git 安全阀补 run_bash / 测试闸门自动回滚 / 沙箱权限分级 / 审计日志）全部落地之后**。
+基于对 index.ts / src/ / skills/ / tests/ 的实际阅读与统计，更新于 **M1（P0+P1）+ skills 能力 + AGENTS.md 项目指令 + P2-1 ~ P2-4 + P3 质量与防护 + P4 通用化（可在任意项目使用）全部落地之后**。
 
 ## 快照数据
 
 | 项 | 值 |
 | --- | --- |
-| index.ts | 237 行 / 11.8 KB（入口：CLI 解析（--stream / --self / --resume）+ agent 主循环 + 记忆读写钩子 + P2-3 预算检查 + P2-4 checkpoint 保存/恢复/清理 + P3-2 测试闸门收尾 + P3-4 审计日志钩子） |
-| src/ | tools.ts 464 行 / 23.9 KB · memory.ts 339 行 / 12.8 KB（含 checkpoint 模块）· context.ts 163 行 / 10.4 KB · budget.ts 103 行 / 3.9 KB · git.ts 68 行 / 2.7 KB（含 P3-1 安全阀）· gate.ts 126 行 / 5.4 KB（P3-2 测试闸门）· audit.ts 60 行 / 2.4 KB（P3-4 审计日志） |
+| index.ts | 302 行 / 14.5 KB（入口：CLI 解析（--stream / --self / --resume / --interactive）+ runAgentLoop 主循环 + 记忆读写钩子 + P2-3 预算检查 + P2-4 checkpoint + P3-2 测试闸门收尾 + P3-4 审计日志钩子 + P4-10 交互模式 REPL） |
+| src/ | tools.ts 546 行 / 26 KB · memory.ts 451 行 / 17.5 KB（含 checkpoint + P4-4/9）· context.ts 189 行 / 11.7 KB（P4-2）· config.ts 137 行 / 5.8 KB（P4-3/8）· gate.ts 190 行 / 8.4 KB（P4-5）· budget.ts 103 行 / 3.9 KB · git.ts 69 行 / 2.7 KB · audit.ts 76 行 / 2.6 KB（P4-4）· interactive.ts 55 行 / 2.3 KB（P4-10）· bin/bun-bot.ts 114 行（P4-6 CLI） |
 | 工具数量 | 6 个：`run_script` / `read_file` / `write_file` / `list_dir` / `run_bash` / `update_plan`（skills 不加新工具） |
 | 工具描述 ACI 化 | ✅ P2-1 已完成：6 个工具 `description` 均带「示例：」JSON 参数形态的 example usage，参数语义同步打磨；系统提示词 [能力] 区块带极简 few-shot（双保险） |
 | 任务模式 | ✅ P2-2 已完成：`--self` 注入 [任务模式] 区块（先 plan 后执行、逐项勾选、未完成计划续跑提示）；`update_plan` 工具全量覆盖式创建/勾选计划；`AgentState.activePlan` 持久化 + MEMORY.md「当前任务计划」区块；主循环结束重载 state 防覆盖 |
@@ -21,26 +21,29 @@
 | 上下文预算 | 默认 120000 tokens（`BUN_BOT_CONTEXT_BUDGET` 可调），超限触发 tool result clearing |
 | 工具输出上限 | 65536 字符（4K → 64KB），截断处带偏移信息可续读 |
 | read_file 硬上限 | 1MB（`MAX_READ_BYTES`） |
-| 记忆 | `AGENT_STATE.json` / `MEMORY.md` 本地跨会话持久化（gitignore，不纳入版本控制，避免每次会话的写回噪音）；含 `activePlan` 当前任务计划 + `contextWarnings` 预算告警；`AGENT_CHECKPOINT.json` 会话级消息历史（gitignore，任务完成即清除） |
+| 记忆 | `.bunbot/AGENT_STATE.json` / `.bunbot/MEMORY.md` 本地跨会话持久化（P4-4：状态目录默认 .bunbot/，gitignore 自动追加，不污染用户仓库）；含 `activePlan` + `contextWarnings`；`.bunbot/AGENT_CHECKPOINT.json` 会话级消息历史（任务完成即清除）；旧位置（项目根）兼容读取不自动删除 |
 | 自修改安全 | `write_file` 落盘前自动 git 快照 + 返回行级 diff 摘要；P3-1：`run_bash` 写操作命令前若工作区有未提交改动也自动快照（`snapshotIfDirty`） |
 | 测试闸门 | ✅ P3-2 已完成：`src/gate.ts`（`runTestGate` / `revertToHead` / `enforceTestGate`）；主循环收尾若本会话发生过自修改（write_file / 写操作 run_bash 的 `gitSnapshot`）自动跑 `bun test`，失败自动回滚到**会话开始前 HEAD**（`git reset --hard` + `git clean -fd`，gitignore 本地状态不丢）并复测确认项目可继续跑 |
 | 沙箱权限分级 | ✅ P3-3 已完成：路径（cwd / path）默认限制工作区内（`BUN_BOT_ALLOW_OUTSIDE_CWD=1` 放行）；`run_bash` 危险命令黑名单（rm -rf /、git push、fork bomb、sudo、设备写入等）直接拒绝；`BUN_BOT_PERMISSIONS=ask` 时写操作命令需确认 |
 | 审计日志 | ✅ P3-4 已完成：`src/audit.ts` —— 每次工具调用入参/出参摘要落盘 `AUDIT.log.jsonl`（gitignore），`appendAudit` 内部防御性截断（400 / 500），`loadAudit` 最新在前 |
-| 自测 | 35 用例 / 225 expect，零外部依赖（`bun test`）；web-search 另有 `self-test.ts --online` 在线实测 |
+| 自测 | 74 用例 / 441 expect，零外部依赖（`bun test`）；web-search 另有 `self-test.ts --online` 在线实测 |
 
 ## 模块解剖
 
 ```text
-index.ts              入口：CLI 解析（--stream / --self / --resume）+ agent 主循环 + 记忆读写钩子（结束重载 state 防覆盖 activePlan）+ 预算检查（超限压缩）+ checkpoint 保存/恢复/清理（--resume）
-src/tools.ts          工具注册表：6 个工具的定义与执行器（新增工具在此注册）
+index.ts              入口：CLI 解析（--stream / --self / --resume / --interactive）+ runAgentLoop 主循环 + 记忆读写钩子 + 预算检查 + checkpoint + 测试闸门收尾 + 交互模式 REPL
+src/tools.ts          工具注册表：6 个工具的定义与执行器（P4-7 readonly 拒绝 + ask 白名单；permissionMode 接配置）
+src/config.ts         项目/全局配置（P4-3/8）：loadConfig（环境变量 > .bunbot.json > ~/.bun-bot/config.json > 默认）+ API key fallback
 src/context.ts        系统提示词组装：[身份] [能力] [项目] [记忆] [任务模式] [规则] + skills 索引 + AGENTS.md 约束声明 + contextWarnings 展示
-src/memory.ts         记忆读写：AGENT_STATE.json / MEMORY.md（含 activePlan + contextWarnings）+ AGENT_CHECKPOINT.json（checkpoint 模块）+ AGENTS.md 项目指令 + 项目上下文加载
+src/memory.ts         记忆读写（P4-4/9）：状态文件在 .bunbot/（AGENT_STATE / MEMORY / CHECKPOINT，gitignore 自动追加）+ checkpoint 模块 + AGENTS.md + 项目上下文 + 文件树忽略/截断
 src/budget.ts         上下文预算：token 估算 + 最轻档压缩器（tool result clearing：最早的 tool 结果摘要化，消息结构不动）
 src/git.ts            git 安全快照：write_file + run_bash 写操作前（hasUncommittedChanges / snapshotIfDirty / currentHead）
-src/gate.ts            测试闸门（P3-2）：runTestGate / revertToHead / enforceTestGate —— 收尾自动跑测试、失败自动回滚
-src/audit.ts           审计日志（P3-4）：appendAudit / loadAudit —— 工具调用入参/出参摘要落盘 AUDIT.log.jsonl
+src/gate.ts            测试闸门（P3-2 + P4-5）：detectTestCommand 多生态探测 / runTestGate / revertToHead / enforceTestGate
+src/interactive.ts     交互模式（P4-10）：driveInteractive / isExitInput —— 多轮 REPL 消息跨轮保持，runRound 可注入离线测试
+src/audit.ts           审计日志（P3-4）：appendAudit / loadAudit —— 落盘 .bunbot/AUDIT.log.jsonl
+bin/bun-bot.ts         CLI 分发（P4-6）：init / --version / --help / 透传 index.ts（bun link 全局安装）
 skills/               组合操作库：skills/<name>/SKILL.md + 实现 + 离线样本 + 自测
-tests/tools.test.ts   self-test 用例（agent 修改自身代码后的验证闸门）
+tests/                self-test 用例 74 / 441 expect（tools + memory + checkpoint + skills + AGENTS.md + P2/P3/P4 各闸门，零外部依赖）
 ```
 
 ## 工具集（6 个，description 均带 example usage）

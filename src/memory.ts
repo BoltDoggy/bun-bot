@@ -1,10 +1,14 @@
 /**
- * memory.ts — 记忆读写（P0 + P2-2 任务模式 + P2-3 预算告警 + P2-4 checkpoint）
+ * memory.ts — 记忆读写（P0 + P2-2 任务模式 + P2-3 预算告警 + P2-4 checkpoint + P4 通用化）
  *
- * 数据：
- *   AGENT_STATE.json       机器可读状态（决策 / 踩坑 / TODO / 上次任务 / 当前任务计划 / 上下文预算告警）
- *   MEMORY.md              人类可读版，由 AGENT_STATE.json 同步生成
- *   AGENT_CHECKPOINT.json  会话级 checkpoint（--resume 断点续跑）：当前会话的消息历史
+ * 数据（P4-4：默认移入 .bunbot/ 目录，不污染目标仓库 git status）：
+ *   .bunbot/AGENT_STATE.json        机器可读状态（决策 / 踩坑 / TODO / 上次任务 / 当前任务计划 / 上下文预算告警）
+ *   .bunbot/MEMORY.md               人类可读版，由 AGENT_STATE.json 同步生成
+ *   .bunbot/AGENT_CHECKPOINT.json   会话级 checkpoint（--resume 断点续跑）：当前会话的消息历史
+ *   .bunbot/AUDIT.log.jsonl         审计日志（P3-4，src/audit.ts）
+ *   目录名可用 .bunbot.json 的 stateDir 配置（默认 .bunbot），环境变量 > 配置 > 默认。
+ *   写状态文件前自动确保目录存在 + .gitignore 追加忽略（幂等），
+ *   旧版本在项目根的状态文件（AGENT_STATE.json 等）读取时兼容迁移（不自动删除）。
  *
  * P2-2 任务模式：AgentState.activePlan 持久化当前任务的 plan（首轮产出、逐项勾选），
  *               进度跨会话保存 —— 中断/重启后可从上次断点继续（checkpoint 的目标锚点）。
@@ -14,9 +18,11 @@
  *               每次消息变更即保存；--resume 启动时加载历史、重建 system 提示词继续跑，
  *               任务正常完成时清除。与 activePlan（任务级锚点）互补：checkpoint 是会话级
  *               全量上下文恢复，中断（Ctrl+C / 超迭代 / 崩溃）后不丢已执行的步骤。
+ * P4-9 大项目上下文加载：buildFileTree 感知 .gitignore（+ 扩展忽略 vendor/target/
+ *               __pycache__/.venv 等）+ 行数预算化截断（超限提示按需 list_dir）——
+ *               大 monorepo / 大依赖目录不会撑爆系统提示词。
  *
- * 注意：三个记忆文件都在 .gitignore 中（每次会话写回会产生噪音），
- *       仅本地持久化，不纳入版本控制。
+ * 注意：状态文件都在 .gitignore 中（每次会话写回会产生噪音），仅本地持久化，不纳入版本控制。
  *
  * 项目级指令：
  *   AGENTS.md         可选。项目根目录的 agent 指令文件（多 agent 工具链通用命名，
@@ -27,6 +33,7 @@
  */
 import {
   existsSync,
+  mkdirSync,
   readdirSync,
   readFileSync,
   rmSync,
@@ -35,6 +42,7 @@ import {
 } from "node:fs";
 import { join } from "node:path";
 import type { ChatMessage } from "./budget";
+import { loadConfig } from "./config";
 
 export const STATE_FILE = "AGENT_STATE.json";
 export const MEMORY_FILE = "MEMORY.md";
@@ -48,16 +56,46 @@ export function workspace(): string {
   return process.env.BUN_BOT_WORKSPACE || process.cwd();
 }
 
+/** 状态目录（P4-4：默认 .bunbot/，可 .bunbot.json 的 stateDir 配置） */
+export function stateDir(): string {
+  return join(workspace(), loadConfig(workspace()).stateDir);
+}
+
+/** 确保状态目录存在（写状态文件前调用） */
+export function ensureStateDir(): void {
+  mkdirSync(stateDir(), { recursive: true });
+}
+
+/**
+ * 确保状态目录被 .gitignore 忽略（P4-4：不污染用户仓库 git status）。
+ * 幂等：.gitignore 已包含该目录则不动；非 git 仓库（无 .git 且无 .gitignore）静默跳过。
+ */
+export function ensureStateIgnored(): void {
+  const base = workspace();
+  const dir = loadConfig(base).stateDir;
+  const gi = join(base, ".gitignore");
+  if (!existsSync(join(base, ".git")) && !existsSync(gi)) return;
+  try {
+    const existing = existsSync(gi) ? readFileSync(gi, "utf8") : "";
+    const line = (dir.endsWith("/") ? dir : dir + "/");
+    if (existing.split("\n").some((l) => l.trim() === line.trim())) return;
+    const sep = existing === "" || existing.endsWith("\n") ? "" : "\n";
+    writeFileSync(gi, existing + sep + "# bun-bot 状态目录（本地持久化，不纳入版本控制）\n" + line + "\n", "utf8");
+  } catch {
+    // 写失败不致命：状态文件仍可用，只是可能出现在 git status
+  }
+}
+
 export function statePath(): string {
-  return join(workspace(), STATE_FILE);
+  return join(stateDir(), STATE_FILE);
 }
 
 export function memoryPath(): string {
-  return join(workspace(), MEMORY_FILE);
+  return join(stateDir(), MEMORY_FILE);
 }
 
 export function checkpointPath(): string {
-  return join(workspace(), CHECKPOINT_FILE);
+  return join(stateDir(), CHECKPOINT_FILE);
 }
 
 export interface Decision {
@@ -107,28 +145,38 @@ export const DEFAULT_STATE: AgentState = {
   activePlan: undefined,
 };
 
-/** 读取 AGENT_STATE.json；文件不存在或损坏时返回默认态 */
-export function loadState(): AgentState {
+/** 读取指定路径的 AGENT_STATE.json；不存在或损坏返回 null（供新旧位置尝试） */
+function readStateAt(p: string): AgentState | null {
   try {
-    if (existsSync(statePath())) {
-      const raw = JSON.parse(readFileSync(statePath(), "utf8")) as Partial<AgentState>;
+    if (existsSync(p)) {
+      const raw = JSON.parse(readFileSync(p, "utf8")) as Partial<AgentState>;
       return { ...DEFAULT_STATE, ...raw };
     }
   } catch (e) {
-    console.error("[memory] 读取 " + STATE_FILE + " 失败，使用默认态: " + e);
+    console.error("[memory] 读取 " + p + " 失败，使用默认态: " + e);
   }
-  return { ...DEFAULT_STATE };
+  return null;
 }
 
-/** 写回 AGENT_STATE.json */
+/**
+ * 读取 AGENT_STATE.json；文件不存在或损坏时返回默认态。
+ * P4-4 兼容：新位置（.bunbot/）没有时尝试旧位置（工作区根），读到即用（不自动删除旧文件）。
+ */
+export function loadState(): AgentState {
+  return readStateAt(statePath()) ?? readStateAt(join(workspace(), STATE_FILE)) ?? { ...DEFAULT_STATE };
+}
+
+/** 写回 AGENT_STATE.json（写前确保目录存在 + .gitignore 忽略） */
 export function saveState(state: AgentState): void {
+  ensureStateDir();
+  ensureStateIgnored();
   writeFileSync(statePath(), JSON.stringify(state, null, 2) + "\n", "utf8");
 }
 
 /** 由 AGENT_STATE.json 同步生成人类可读的 MEMORY.md */
 export function syncMemoryFile(state: AgentState): void {
   const b: string[] = [];
-  b.push("# bun-bot 记忆（人类可读版）");
+  b.push("# agent 记忆（人类可读版）");
   b.push("");
   b.push("> 自动生成自 `AGENT_STATE.json`。改这里不会回写，长期修改请编辑 JSON 后重跑同步。");
   b.push("");
@@ -181,6 +229,8 @@ export function syncMemoryFile(state: AgentState): void {
     b.push("");
     for (const w of state.contextWarnings) b.push("- " + w);
   }
+  ensureStateDir();
+  ensureStateIgnored();
   writeFileSync(memoryPath(), b.join("\n") + "\n", "utf8");
 }
 
@@ -204,19 +254,27 @@ export function saveCheckpoint(messages: ChatMessage[]): void {
     savedAt: new Date().toISOString(),
     messages: messages.filter((m) => m.role !== "system"),
   };
+  ensureStateDir();
+  ensureStateIgnored();
   writeFileSync(checkpointPath(), JSON.stringify(data, null, 2) + "\n", "utf8");
 }
 
-/** 读取会话 checkpoint；不存在或损坏时返回 null */
+/**
+ * 读取会话 checkpoint；不存在或损坏时返回 null。
+ * P4-4 兼容：新位置（.bunbot/）没有时尝试旧位置（工作区根）。
+ */
 export function loadCheckpoint(): ChatMessage[] | null {
-  try {
-    if (!existsSync(checkpointPath())) return null;
-    const raw = JSON.parse(readFileSync(checkpointPath(), "utf8")) as Partial<CheckpointData>;
-    if (!Array.isArray(raw.messages) || raw.messages.length === 0) return null;
-    return raw.messages;
-  } catch {
-    return null;
-  }
+  const tryRead = (p: string): ChatMessage[] | null => {
+    try {
+      if (!existsSync(p)) return null;
+      const raw = JSON.parse(readFileSync(p, "utf8")) as Partial<CheckpointData>;
+      if (!Array.isArray(raw.messages) || raw.messages.length === 0) return null;
+      return raw.messages;
+    } catch {
+      return null;
+    }
+  };
+  return tryRead(checkpointPath()) ?? tryRead(join(workspace(), CHECKPOINT_FILE));
 }
 
 /** 清除会话 checkpoint（任务正常完成时调用，避免残留干扰下次运行） */
@@ -251,13 +309,60 @@ export function buildResumeMessages(checkpoint: ChatMessage[], newTask?: string)
 
 // ---------- 项目上下文 ----------
 
-const IGNORED_DIRS = new Set([".git", "node_modules", "dist", "build", ".cache", "coverage"]);
+/** 常见忽略目录（P4-9 扩展：大依赖/构建产物目录不进文件树） */
+const IGNORED_DIRS = new Set([
+  ".git", "node_modules", "dist", "build", ".cache", "coverage",
+  "vendor", "target", "__pycache__", ".venv", "venv",
+  ".pytest_cache", ".mypy_cache", ".next", ".nuxt", ".turbo", ".docusaurus",
+]);
 const IGNORED_FILES = new Set([".DS_Store"]);
 
-/** 生成项目文件树（带缩进 + 文件大小） */
-export function buildFileTree(maxDepth = 4, base = workspace()): string {
+/**
+ * 从 .gitignore 提取要忽略的目录名（P4-9：文件树感知 .gitignore）。
+ * 只处理保守的目录形态：以 / 结尾（vendor/），或不含 /、*、!、. 的裸名
+ * （如 vendor、dist —— 避免误伤 .env / *.log 这类文件规则）。
+ */
+export function gitignoreDirs(base: string): Set<string> {
+  const dirs = new Set<string>();
+  try {
+    const gi = join(base, ".gitignore");
+    if (!existsSync(gi)) return dirs;
+    for (const line of readFileSync(gi, "utf8").split("\n")) {
+      const t = line.trim();
+      if (!t || t.startsWith("#")) continue;
+      if (t.endsWith("/")) {
+        dirs.add(t.slice(0, -1));
+      } else if (!t.includes("/") && !t.includes("*") && !t.includes("!") && !t.includes(".")) {
+        dirs.add(t);
+      }
+    }
+  } catch {
+    // .gitignore 不可读时按内置忽略处理
+  }
+  return dirs;
+}
+
+/**
+ * 生成项目文件树（带缩进 + 文件大小）。
+ * P4-9 大项目上下文加载：
+ *   - 内置忽略 + .gitignore 感知（大依赖目录不进上下文）
+ *   - 行数预算化截断（maxLines，默认 200）—— 超限提示"用 list_dir 按需查看"，
+ *     大 monorepo 不会撑爆系统提示词。
+ */
+export function buildFileTree(
+  maxDepth = 4,
+  base = workspace(),
+  opts: { maxLines?: number } = {},
+): string {
+  const ignoreDirs = gitignoreDirs(base);
+  const maxLines = opts.maxLines ?? 200;
   const lines: string[] = [];
+  let truncated = false;
   const walk = (dir: string, depth: number) => {
+    if (lines.length >= maxLines) {
+      truncated = true;
+      return;
+    }
     let entries: string[];
     try {
       entries = readdirSync(dir);
@@ -273,7 +378,11 @@ export function buildFileTree(maxDepth = 4, base = workspace()): string {
       }
     });
     for (const e of info) {
-      if (e.dir && IGNORED_DIRS.has(e.name)) continue;
+      if (lines.length >= maxLines) {
+        truncated = true;
+        break;
+      }
+      if (e.dir && (IGNORED_DIRS.has(e.name) || ignoreDirs.has(e.name))) continue;
       if (!e.dir && IGNORED_FILES.has(e.name)) continue;
       const p = join(dir, e.name);
       let size = "";
@@ -285,6 +394,9 @@ export function buildFileTree(maxDepth = 4, base = workspace()): string {
     }
   };
   walk(base, 0);
+  if (truncated) {
+    lines.push("… [文件树过大，仅展示前 " + maxLines + " 行；大目录请用 list_dir 按需查看]");
+  }
   return lines.join("\n");
 }
 

@@ -1,5 +1,5 @@
 /**
- * context.ts — 系统提示词组装（P0 + skills 索引 + P2-2 任务模式 + P2-3 预算告警 + P3 安全）
+ * context.ts — 系统提示词组装（P0 + skills 索引 + P2-2 任务模式 + P2-3 预算告警 + P3 安全 + P4 通用化）
  *
  * 结构（§4）：[身份] [能力] [项目] [记忆] [规则]
  * 目标：agent 启动时能准确说出"我是谁、项目结构、上次干了什么、有什么 skills 可用"。
@@ -13,17 +13,51 @@
  *              让 agent 重启后能感知"上次长任务触发了多少次压缩"。
  * P3 安全（质量与防护）：[规则] 声明测试闸门（收尾自动跑测试、失败自动回滚）、
  *              run_bash 写操作自动快照、危险命令拒绝、路径限制工作区内、审计日志。
+ * P4 通用化（在其他项目使用 bun-bot）：[身份] 用 AGENT_IDENTITY 环境变量可配置
+ *              （默认 bun-bot）；[项目] 关键文件按存在性动态生成，不再硬编码
+ *              index.ts / src/ 等 bun-bot 自身文件结构 —— 任意项目（无 src/、无 index.ts）
+ *              都能构建出准确的项目认知，不会出现误导性的文件路径。
  */
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { AgentState, ActivePlan } from "./memory";
 import { workspace, STATE_FILE, MEMORY_FILE, AGENTS_FILE } from "./memory";
+import { loadConfig } from "./config";
 
 export interface ContextInput {
   state: AgentState;
   project: string;
   /** 任务模式（--self）：注入"先 plan 后执行"流程说明 */
   selfMode?: boolean;
+}
+
+/** [身份] 可配置（P4 通用化）：AGENT_IDENTITY 环境变量覆盖默认身份（默认 bun-bot） */
+export function identity(): string {
+  return loadConfig(workspace()).identity;
+}
+
+/**
+ * 项目关键文件：按存在性动态生成（P4 通用化 —— 不硬编码 bun-bot 自身文件结构）。
+ * 只列出工作区实际存在的常见项目文件；无 src/、无 index.ts 的项目同样能拿到准确认知。
+ */
+export function keyFilesSection(base = workspace()): string {
+  const lines: string[] = [];
+  const exists = (p: string) => existsSync(join(base, p));
+  const add = (name: string, desc: string) => lines.push("- " + name + "  " + desc);
+  if (exists(AGENTS_FILE)) add(AGENTS_FILE, "项目级指令（存在时优先级最高，见 [规则]）");
+  if (exists("README.md")) add("README.md", "项目说明（已加载进上方 [项目] 区块）");
+  if (exists("package.json")) add("package.json", "依赖与脚本（bun/npm 脚本入口与测试命令线索）");
+  if (exists("tsconfig.json")) add("tsconfig.json", "TypeScript 配置");
+  if (exists("index.ts") || exists("index.js") || exists("main.ts") || exists("main.js")) {
+    add("index.ts / main.*", "程序入口（CLI / 主循环）");
+  }
+  if (exists("src")) add("src/", "源码目录");
+  if (exists("tests") || exists("test")) add("tests/", "测试目录（改完必须跑测试验证）");
+  if (exists("skills")) add("skills/", "组合操作库（skills/<name>/SKILL.md + 自测）");
+  if (exists("docs")) add("docs/", "文档（计划/架构/索引）");
+  if (exists(".bunbot.json")) add(".bunbot.json", "项目级配置（P4：环境变量 > 配置 > 默认值）");
+  if (!lines.length) add("（未识别到常见项目文件，先用 list_dir 看目录结构）", "");
+  return lines.join("\n");
 }
 
 function planProgress(p: ActivePlan): string {
@@ -111,7 +145,7 @@ function taskModeSection(state: AgentState): string {
 export function buildSystemPrompt(ctx: ContextInput): string {
   const { state, project } = ctx;
   const b: string[] = [];
-  b.push("[身份] 我是 bun-bot，一个自我认知为 Bun.js 运行时的 agent。");
+  b.push("[身份] " + identity());
   b.push("");
   b.push("我喜欢用实际运行代码来验证想法，而不是凭空猜测。能用代码验证的事情就写代码验证，脚本里用 console.log 输出需要观察的结果。任务完成后，用简洁的中文总结结论和关键过程。");
   b.push("");
@@ -132,18 +166,8 @@ export function buildSystemPrompt(ctx: ContextInput): string {
   b.push("[项目] 当前工作区: " + workspace());
   b.push(project);
   b.push("");
-  b.push("关键文件:");
-  b.push("- " + AGENTS_FILE + "        项目级指令（可选，存在时优先级最高，见 [规则]）");
-  b.push("- index.ts         入口：CLI 解析 + agent 主循环（保持轻量）");
-  b.push("- src/tools.ts     工具注册表（新增工具在此注册）");
-  b.push("- src/budget.ts    上下文 token 预算与超限压缩（P2-3，最轻档 tool result clearing）");
-  b.push("- src/gate.ts      测试闸门（P3-2：收尾自动跑测试、失败自动回滚）");
-  b.push("- src/audit.ts     审计日志（P3-4：每次工具调用入参/出参摘要落盘）");
-  b.push("- src/context.ts   系统提示词组装");
-  b.push("- src/memory.ts    记忆读写（" + STATE_FILE + " / " + MEMORY_FILE + "）");
-  b.push("- src/git.ts       git 安全快照（write_file + run_bash 写操作前）");
-  b.push("- skills/          组合操作库（skills/<name>/SKILL.md + 自测）");
-  b.push("- tests/           self-test 用例（改完必须跑）");
+  b.push("关键文件（按存在性列出，不存在的不在列表中）:");
+  b.push(keyFilesSection());
   b.push("");
   b.push("[记忆] 上次任务的决策、踩坑、TODO、当前任务计划、上下文预算告警（来自 " + STATE_FILE + " / " + MEMORY_FILE + "）：");
   b.push(memorySection(state));

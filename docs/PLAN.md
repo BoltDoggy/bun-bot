@@ -206,6 +206,7 @@ learn/                理论地基：5 篇权威一手材料 + 结构化笔记�
 - ✅ **AGENTS.md 项目指令**：项目级契约落地 —— 存在时加载进 [项目] 最前（优先级高于 README/docs），[规则] 第 5 条声明约束力；缺失时静默跳过（2026-08 完成）。
 - ✅ **M2**（P2）：`--self` 自主迭代 + budget.ts / tool result clearing / checkpoint —— **P2-1 工具描述 ACI 化 ✅ + P2-2 任务模式 ✅ + P2-3 上下文预算 ✅ + P2-4 --resume checkpoint ✅ 全部完成**（2026-08）。
 - ✅ **M3**（P3）：加固、回滚、测试闸门 —— git 安全阀补 run_bash + 测试闸门自动 revert + 沙箱权限分级 + 审计日志全部落地（2026-08 完成），形成可信的自修改循环，可长期自动演进。
+- ✅ **M4**（P4 通用化）：可在**任意项目**使用 —— ①身份/关键文件去专用化（AGENT_IDENTITY + 按存在性动态生成）②.bunbot.json 项目配置（环境变量 > 配置 > 全局 > 默认）③状态文件移入 .bunbot/（自动 .gitignore，不污染 git）④多生态测试闸门（bun/pytest/cargo/go + testCommand 配置）⑤CLI bin + init（bun-bot init 一键初始化）⑥readonly 只读模式 + ask 白名单 ⑦全局配置 ~/.bun-bot/（API key fallback + 多项目状态隔离）⑧大项目文件树（.gitignore 感知 + 行数截断）⑨交互模式 --interactive（2026-08 完成）。
 
 ---
 

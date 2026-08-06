@@ -23,6 +23,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSy
 import { tmpdir } from "node:os";
 import { isAbsolute, join, relative, resolve, dirname } from "node:path";
 import { workspace, loadState, saveState, syncMemoryFile } from "./memory";
+import { loadConfig } from "./config";
 import { snapshotIfDirty } from "./git";
 
 export const DEFAULT_OUTPUT_LIMIT = 65536; // P1: 4K → 64KB，1M 上下文下完整回传
@@ -95,7 +96,8 @@ const WRITE_HINTS = [
 type PermissionMode = "auto" | "ask";
 
 function permissionMode(): PermissionMode {
-  return process.env.BUN_BOT_PERMISSIONS === "ask" ? "ask" : "auto";
+
+  return loadConfig(workspace()).permissions;
 }
 
 /** run_bash 命令合法性检查：黑名单 → 拒绝；ask 模式写操作 → 需确认 */
@@ -105,8 +107,17 @@ function checkCommand(command: string, mode: PermissionMode): { allowed: boolean
       return { allowed: false, reason: "危险命令被权限系统拒绝（匹配: /" + p.source + "/）" };
     }
   }
-  if (mode === "ask" && WRITE_HINTS.some((h) => command.includes(h))) {
-    return { allowed: false, reason: "权限模式 ask（BUN_BOT_PERMISSIONS=ask）：写操作命令需人工确认。请改用 auto 模式放行，或换用 write_file 工具。" };
+  const isWrite = WRITE_HINTS.some((h) => command.includes(h));
+  if (isWrite && mode === "ask") {
+    const allow = loadConfig(workspace()).allowCommands;
+    const cmd = command.trim();
+    if (allow.some((a) => a.trim() && (cmd === a.trim() || cmd.startsWith(a.trim() + " ")))) {
+      return { allowed: true };
+    }
+    return { allowed: false, reason: "权限模式 ask（BUN_BOT_PERMISSIONS=ask）：写操作命令需人工确认。可在 .bunbot.json 的 allowCommands 白名单放行，或换用 write_file 工具。" };
+  }
+  if (isWrite && mode === "readonly") {
+    return { allowed: false, reason: "权限模式 readonly（BUN_BOT_PERMISSIONS=readonly）：写操作命令被禁止（只读模式，只能分析/读取，不能改文件）。" };
   }
   return { allowed: true };
 }
@@ -222,6 +233,9 @@ export function summarizeDiff(oldText: string, newText: string, maxHunk = 8): st
 
 async function runWriteFile(args: { path?: string; content?: string }): Promise<string> {
   if (!args.path || args.content === undefined) return JSON.stringify({ error: "缺少 path 或 content 参数" });
+  if (permissionMode() === "readonly") {
+    return JSON.stringify({ error: "权限模式 readonly：write_file 被禁止（只读模式，不能修改工作区文件）" });
+  }
   const p = resolveInWorkspace(args.path);
   if (p === null) return outsideError("path", args.path);
   const old = existsSync(p) ? readFileSync(p, "utf8") : "";
@@ -309,6 +323,9 @@ interface PlanArgs {
  * 全部 done 时 status 自动置为 "done"。
  */
 async function runUpdatePlan(args: PlanArgs): Promise<string> {
+  if (permissionMode() === "readonly") {
+    return JSON.stringify({ error: "权限模式 readonly：update_plan 被禁止（任务计划会写回状态文件，只读模式不可用）" });
+  }
   if (!Array.isArray(args.items) || args.items.length === 0) {
     return JSON.stringify({ error: "缺少 items 数组（计划条目，至少 1 项）。示例：{\"title\":\"新增工具\",\"items\":[{\"text\":\"注册工具\",\"done\":false}]}" });
   }
