@@ -23,3 +23,7 @@ bun.lockb
 .DS_Store
 .idea/
 .vscode/
+
+# Agent 跨会话记忆（每次会话都会变更，产生噪音，仅本地持久化）
+AGENT_STATE.json
+MEMORY.md
