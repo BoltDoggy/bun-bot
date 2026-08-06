@@ -38,6 +38,7 @@ import {
   loadProjectContext,
   readAgentDirective,
   AGENTS_FILE,
+  BUN_BOT_FILE,
 } from "../src/memory";
 import { skillsIndex, buildSystemPrompt } from "../src/context";
 import { estimateTokens, estimateMessagesTokens, compressContext, type ChatMessage } from "../src/budget";
@@ -223,10 +224,10 @@ test("workspace() 返回测试沙箱", () => {
 
 // ---------- AGENTS.md 项目级指令 ----------
 
-test("AGENTS.md 不存在时 readAgentDirective 返回 null，loadProjectContext 静默跳过", () => {
+test("AGENTS.md 不存在时 readAgentDirective 返回空数组，loadProjectContext 静默跳过", () => {
   const p = join(tmp, AGENTS_FILE);
   if (existsSync(p)) rmSync(p);
-  expect(readAgentDirective()).toBeNull();
+  expect(readAgentDirective()).toEqual([]);
   const ctx = loadProjectContext();
   expect(ctx).not.toContain("## " + AGENTS_FILE);
   expect(ctx).toContain("## README.md");
@@ -242,9 +243,9 @@ test("AGENTS.md 存在时被加载，且排在 README 之前（优先级最高�
   writeFileSync(join(tmp, AGENTS_FILE), agentContent);
 
   const directive = readAgentDirective();
-  expect(directive).not.toBeNull();
-  expect(directive!.name).toBe(AGENTS_FILE);
-  expect(directive!.content).toContain("禁止修改 docs/ 下的文件");
+  expect(directive.length).toBe(1);
+  expect(directive[0].name).toBe(AGENTS_FILE);
+  expect(directive[0].content).toContain("禁止修改 docs/ 下的文件");
 
   const ctx = loadProjectContext();
   const agentIdx = ctx.indexOf("## " + AGENTS_FILE);
@@ -258,10 +259,61 @@ test("AGENTS.md 存在时被加载，且排在 README 之前（优先级最高�
   const prompt = buildSystemPrompt({ state: loadState(), project: ctx });
   expect(prompt).toContain(AGENTS_FILE);
   expect(prompt).toContain("约束力");
-  expect(prompt).toContain("以 " + AGENTS_FILE + " 为准");
+  expect(prompt).toContain("以 " + AGENTS_FILE + " / " + BUN_BOT_FILE + " 为准");
 
   // 清理，避免影响其他用例
   rmSync(join(tmp, AGENTS_FILE));
+});
+
+
+// ---------- BUN_BOT.md 项目级指令（P6-2） ----------
+
+test("P6-2 BUN_BOT.md 与 AGENTS.md 一并加载（readAgentDirective 数组语义）", () => {
+  const agents = "# AGENTS 契约\n\n- 禁止修改 docs/\n";
+  const bunbot = "# BUN_BOT 实现细节\n\n- 构建: bash scripts/build.sh\n";
+  writeFileSync(join(tmp, AGENTS_FILE), agents);
+  writeFileSync(join(tmp, BUN_BOT_FILE), bunbot);
+
+  const directive = readAgentDirective();
+  expect(directive.length).toBe(2);
+  expect(directive[0].name).toBe(AGENTS_FILE);
+  expect(directive[1].name).toBe(BUN_BOT_FILE);
+  expect(directive[1].content).toContain("scripts/build.sh");
+
+  // loadProjectContext 两个都加载，且都在 README 之前
+  const ctx = loadProjectContext();
+  const agentsIdx = ctx.indexOf("## " + AGENTS_FILE);
+  const bunbotIdx = ctx.indexOf("## " + BUN_BOT_FILE);
+  const readmeIdx = ctx.indexOf("## README.md");
+  expect(agentsIdx).toBeGreaterThanOrEqual(0);
+  expect(bunbotIdx).toBeGreaterThan(agentsIdx);
+  expect(bunbotIdx).toBeLessThan(readmeIdx);
+  expect(ctx).toContain("BUN_BOT 实现细节");
+
+  // 系统提示词声明两个文件的约束力
+  const prompt = buildSystemPrompt({ state: loadState(), project: ctx });
+  expect(prompt).toContain(AGENTS_FILE);
+  expect(prompt).toContain(BUN_BOT_FILE);
+  expect(prompt).toContain("以 " + AGENTS_FILE + " / " + BUN_BOT_FILE + " 为准");
+
+  // 清理
+  rmSync(join(tmp, AGENTS_FILE));
+  rmSync(join(tmp, BUN_BOT_FILE));
+});
+
+test("P6-2 只有 BUN_BOT.md（无 AGENTS.md）时也加载", () => {
+  const p = join(tmp, AGENTS_FILE);
+  if (existsSync(p)) rmSync(p);
+  writeFileSync(join(tmp, BUN_BOT_FILE), "# 只有 BUN_BOT\n");
+
+  const directive = readAgentDirective();
+  expect(directive.length).toBe(1);
+  expect(directive[0].name).toBe(BUN_BOT_FILE);
+  const ctx = loadProjectContext();
+  expect(ctx).toContain("## " + BUN_BOT_FILE);
+  expect(ctx).not.toContain("## " + AGENTS_FILE);
+
+  rmSync(join(tmp, BUN_BOT_FILE));
 });
 
 // ---------- skills 层 ----------

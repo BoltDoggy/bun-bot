@@ -1,6 +1,6 @@
 # 现状分析（as-is）
 
-基于对 index.ts / src/ / skills/ / tests/ 的实际阅读与统计，更新于 **M1（P0+P1）+ skills 能力 + AGENTS.md 项目指令 + P2-1 ~ P2-4 + P3 质量与防护 + P4 通用化（可在任意项目使用）+ P5 全平台分发（GitHub Actions 构建 + 安装脚本）全部落地之后**。
+基于对 index.ts / src/ / skills/ / tests/ 的实际阅读与统计，更新于 **M1（P0+P1）+ skills 能力 + AGENTS.md / BUN_BOT.md 项目指令 + P2-1 ~ P2-4 + P3 质量与防护 + P4 通用化（可在任意项目使用）+ P5 全平台分发 + P6 生态对齐（流式默认 / 指令拆分 / .agents/skills / 记忆防膨胀）（GitHub Actions 构建 + 安装脚本）全部落地之后**。
 
 ## 快照数据
 
@@ -14,7 +14,7 @@
 | 任务模式 | ✅ P2-2 已完成：`--self` 注入 [任务模式] 区块（先 plan 后执行、逐项勾选、未完成计划续跑提示）；`update_plan` 工具全量覆盖式创建/勾选计划；`AgentState.activePlan` 持久化 + MEMORY.md「当前任务计划」区块；主循环结束重载 state 防覆盖 |
 | 上下文预算 | ✅ P2-3 已完成：`budget.ts`（`estimateTokens` 中英混合离线估算 / `estimateMessagesTokens` / `compressContext` 最轻档 tool result clearing）；主循环每轮检查预算，超限压缩最早 tool 结果（保留前缀 + 清理标记，消息结构不动）；告警写回 `AgentState.contextWarnings`（[记忆] 区块 + MEMORY.md「上下文预算告警」区块可见） |
 | checkpoint | ✅ P2-4 已完成：`--resume` 会话级断点续跑 —— `AGENT_CHECKPOINT.json` 持久化当前会话消息历史（不含 system，恢复时重建），每次消息变更落盘；中断（Ctrl+C / 超迭代 / 崩溃）后 `--resume` 恢复完整上下文继续；任务正常完成自动清除 |
-| 项目级指令 | `AGENTS.md`（可选）：存在时由 `loadProjectContext` 加载进 [项目] 区块最前，[规则] 第 5 条声明其约束力（优先级高于 README/docs）；不存在时静默跳过 |
+| 项目级指令 | `AGENTS.md`（通用契约）+ `BUN_BOT.md`（实现细节，P6-2）（均可选）：由 `readAgentDirective` 一并加载进 [项目] 区块最前，[规则] 第 5 条声明其约束力（优先级高于 README/docs）；不存在时静默跳过 |
 | skills | 1 个：`web-search` v2（search.ts / self-test.ts / samples/），索引进 [能力] 区块，细节按需 read_file |
 | 模型 | `deepseek-v4-flash`（`BUN_BOT_MODEL` 可换，如 `deepseek-v4-pro`） |
 | 最大迭代 | 150 轮（`BUN_BOT_MAX_ITERATIONS` 可调） |
@@ -41,8 +41,8 @@ scripts/install.sh     P5 安装脚本（POSIX sh）：检测平台 → 下载�
 scripts/install.ps1    P5 安装脚本（PowerShell）：架构检测 → 下载 .exe → Get-FileHash 校验 → 装为 bun-bot.exe → 加用户 PATH
 src/tools.ts          工具注册表：6 个工具的定义与执行器（run_script spawn 自身：编译产物自举；P4-7 readonly 拒绝 + ask 白名单；permissionMode 接配置）
 src/config.ts         项目/全局配置（P4-3/8）：loadConfig（环境变量 > .bunbot.json > ~/.bun-bot/config.json > 默认）+ API key fallback
-src/context.ts        系统提示词组装：[身份] [能力] [项目] [记忆] [任务模式] [规则] + skills 索引 + AGENTS.md 约束声明 + contextWarnings 展示
-src/memory.ts         记忆读写（P4-4/9）：状态文件在 .bunbot/（AGENT_STATE / MEMORY / CHECKPOINT，gitignore 自动追加）+ checkpoint 模块 + AGENTS.md + 项目上下文 + 文件树忽略/截断
+src/context.ts        系统提示词组装：[身份] [能力] [项目] [记忆] [任务模式] [规则] + skills 索引 + AGENTS.md / BUN_BOT.md 约束声明 + contextWarnings 展示
+src/memory.ts         记忆读写（P4-4/9）：状态文件在 .bunbot/（AGENT_STATE / MEMORY / CHECKPOINT，gitignore 自动追加）+ checkpoint 模块 + AGENTS.md / BUN_BOT.md 指令加载 + 项目上下文 + 文件树忽略/截断
 src/budget.ts         上下文预算：token 估算 + 最轻档压缩器（tool result clearing：最早的 tool 结果摘要化，消息结构不动）
 src/git.ts            git 安全快照：write_file + run_bash 写操作前（hasUncommittedChanges / snapshotIfDirty / currentHead）
 src/gate.ts            测试闸门（P3-2 + P4-5）：detectTestCommand 多生态探测 / runTestGate / revertToHead / enforceTestGate
@@ -50,7 +50,7 @@ src/interactive.ts     交互模式（P4-10）：driveInteractive / isExitInput 
 src/audit.ts           审计日志（P3-4）：appendAudit / loadAudit —— 落盘 .bunbot/AUDIT.log.jsonl
 bin/bun-bot.ts         CLI 分发（P4-6）：复用 src/cli.ts 的 init / --version / --help / 透传 index.ts（bun link 全局安装；编译产物入口 index.ts 同样支持）
 skills/               组合操作库：skills/<name>/SKILL.md + 实现 + 离线样本 + 自测
-tests/                self-test 用例 87 / 518 expect（tools + memory + checkpoint + skills + AGENTS.md + P2/P3/P4 各闸门 + P5 release，零外部依赖）
+tests/                self-test 用例 91 / 530 expect（tools + memory + checkpoint + skills + AGENTS.md + P2/P3/P4 各闸门 + P5 release + P6 stream，零外部依赖）
 ```
 
 ## 工具集（6 个，description 均带 example usage）
@@ -107,13 +107,13 @@ tests/                self-test 用例 87 / 518 expect（tools + memory + checkp
 | 与任务模式 | 互补：`activePlan`（P2-2）管**任务级目标**（首轮 plan、逐项勾选，重启可见进度）；checkpoint 管**会话级上下文**（完整消息历史，中断后不丢已执行的步骤） |
 | 安全 | `AGENT_CHECKPOINT.json` 在 .gitignore（会话写回噪音，仅本地持久化） |
 
-## 项目级指令（AGENTS.md，可选）
+## 项目级指令（AGENTS.md + BUN_BOT.md，可选）
 
 | 行为 | 说明 |
 | --- | --- |
-| 加载时机 | `loadProjectContext()` 读取工作区根 `AGENTS.md`（`readAgentDirective()`），存在则置于项目认知最前 |
+| 加载时机 | `loadProjectContext()` 读取工作区根 `AGENTS.md` + `BUN_BOT.md`（`readAgentDirective()` 数组语义，P6-2），存在则置于项目认知最前 |
 | 优先级 | 高于 README / docs：它是用户与 agent 之间的项目级契约 |
-| 约束声明 | `buildSystemPrompt` 的 [规则] 第 5 条：内容冲突时以 AGENTS.md 为准 |
+| 约束声明 | `buildSystemPrompt` 的 [规则] 第 5 条：内容冲突时以 AGENTS.md / BUN_BOT.md 为准 |
 | 上限 | 8000 字符截断提示（与 README 同级），需完整内容可 read_file |
 | 缺失时 | 返回 null / 静默跳过，老项目系统提示词不变 |
 
@@ -129,7 +129,7 @@ tests/                self-test 用例 87 / 518 expect（tools + memory + checkp
 ## agent 主循环（index.ts）
 
 1. 加载记忆（`loadState`）；首次运行初始化 `AGENT_STATE.json` / `MEMORY.md`
-2. 加载项目上下文（`loadProjectContext`）→ AGENTS.md（如有）+ README + docs + 文件树 + 记忆
+2. 加载项目上下文（`loadProjectContext`）→ AGENTS.md + BUN_BOT.md（如有）+ README + docs + 文件树 + 记忆
 3. 组装系统提示词（`buildSystemPrompt`）→ 六区块（--self 时含 [任务模式]）+ skills 索引，预算 <5%
 4. **`--resume` 时从 `AGENT_CHECKPOINT.json` 恢复会话消息历史**（system 重建 + 末尾 tool 兜底 + 可选新任务追加）
 5. 记录**会话开始 HEAD**（`sessionStartHead`，P3-2 回滚锚点）；循环：`chatCompletion` → 有 `tool_calls` 就 `executeTool` 并回填 → **每轮检查上下文预算，超限压缩早期 tool 结果（P2-3）** → **每次消息变更落盘 checkpoint（P2-4）** → **每次工具调用后 appendAudit 入参/出参摘要（P3-4）** → **跟踪 didModify（write_file / 写操作 run_bash）** → 直到无工具调用

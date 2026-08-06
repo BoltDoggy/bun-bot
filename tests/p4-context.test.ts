@@ -7,6 +7,7 @@
  *      构建系统提示词时，关键文件区块不出现 bun-bot 特有文件路径
  *   3. 存在性感知：存在的文件列出（README.md / package.json / src/ 等），
  *      不存在的（src/、AGENTS.md）不在列表中
+ *   4. P6-2：BUN_BOT.md 与 AGENTS.md 一样按存在性列出
  *
  * 运行：bun test
  */
@@ -15,7 +16,7 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { buildSystemPrompt, identity, keyFilesSection } from "../src/context";
-import { loadState, workspace } from "../src/memory";
+import { loadState, workspace, BUN_BOT_FILE } from "../src/memory";
 
 let tmp: string;
 beforeAll(() => {
@@ -98,11 +99,13 @@ test("P4 存在性感知：有 src/ + tests/ + AGENTS.md 时全部列出，keyFi
   mkdirSync(join(base, "tests"), { recursive: true });
   mkdirSync(join(base, "docs"), { recursive: true });
   writeFileSync(join(base, "AGENTS.md"), "# 指令\n");
+  writeFileSync(join(base, BUN_BOT_FILE), "# bun-bot 细节\n");
   writeFileSync(join(base, "README.md"), "# rich\n");
   writeFileSync(join(base, "index.ts"), "console.log('hi')\n");
 
   const sec = keyFilesSection(base);
   expect(sec).toContain("- " + "AGENTS.md");
+  expect(sec).toContain("- " + BUN_BOT_FILE);
   expect(sec).toContain("- README.md");
   expect(sec).toContain("- index.ts / main.*");
   expect(sec).toContain("- src/");

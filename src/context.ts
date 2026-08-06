@@ -1,10 +1,11 @@
 /**
- * context.ts — 系统提示词组装（P0 + skills 索引 + P2-2 任务模式 + P2-3 预算告警 + P3 安全 + P4 通用化）
+ * context.ts — 系统提示词组装（P0 + skills 索引 + P2-2 任务模式 + P2-3 预算告警 + P3 安全 + P4 通用化 + P6-2 指令拆分）
  *
  * 结构（§4）：[身份] [能力] [项目] [记忆] [规则]
  * 目标：agent 启动时能准确说出"我是谁、项目结构、上次干了什么、有什么 skills 可用"。
- * 项目级指令：AGENTS.md 存在时由 loadProjectContext 加载进 [项目] 区块（最前），
- *             并在 [规则] 中声明其约束力（优先级高于 README / docs）。
+ * 项目级指令：AGENTS.md（通用项目契约）+ BUN_BOT.md（bun-bot 自研细节，P6-2）由
+ *             loadProjectContext 加载进 [项目] 区块（最前），并在 [规则] 中声明其约束力
+ *             （优先级高于 README / docs）。
  * P2-1 ACI 化：[能力] 区块的工具描述同步带极简 example usage（few-shot），
  *              与 src/tools.ts 的完整工具 description 呼应（双保险）。
  * P2-2 任务模式：--self 时注入 [任务模式] 区块（先 plan 后执行、逐项勾选），
@@ -21,7 +22,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { AgentState, ActivePlan } from "./memory";
-import { workspace, STATE_FILE, MEMORY_FILE, AGENTS_FILE } from "./memory";
+import { workspace, STATE_FILE, MEMORY_FILE, AGENTS_FILE, BUN_BOT_FILE } from "./memory";
 import { loadConfig } from "./config";
 
 export interface ContextInput {
@@ -44,7 +45,8 @@ export function keyFilesSection(base = workspace()): string {
   const lines: string[] = [];
   const exists = (p: string) => existsSync(join(base, p));
   const add = (name: string, desc: string) => lines.push("- " + name + "  " + desc);
-  if (exists(AGENTS_FILE)) add(AGENTS_FILE, "项目级指令（存在时优先级最高，见 [规则]）");
+  if (exists(AGENTS_FILE)) add(AGENTS_FILE, "项目级指令（通用契约，存在时优先级最高，见 [规则]）");
+  if (exists(BUN_BOT_FILE)) add(BUN_BOT_FILE, "项目级指令（bun-bot 实现细节，与 AGENTS.md 同级）");
   if (exists("README.md")) add("README.md", "项目说明（已加载进上方 [项目] 区块）");
   if (exists("package.json")) add("package.json", "依赖与脚本（bun/npm 脚本入口与测试命令线索）");
   if (exists("tsconfig.json")) add("tsconfig.json", "TypeScript 配置");
@@ -181,7 +183,7 @@ export function buildSystemPrompt(ctx: ContextInput): string {
   b.push("2. 工具输出默认完整读取，不要假设被截断；大文件用偏移续读。");
   b.push("3. 需要长任务时，给 run_script / run_bash 传更大的 timeoutMs（如 120000），别等超时。");
   b.push("4. 结论用简洁中文总结，说明做了什么、怎么验证的、结果如何。");
-  b.push("5. 若工作区根目录存在 " + AGENTS_FILE + "，它是用户与我的项目级契约，约束力高于 [项目] 区块中 README/docs 的描述；内容冲突时以 " + AGENTS_FILE + " 为准。");
+  b.push("5. 若工作区根目录存在 " + AGENTS_FILE + "（连同 " + BUN_BOT_FILE + "），它是用户与我的项目级契约，约束力高于 [项目] 区块中 README/docs 的描述；内容冲突时以 " + AGENTS_FILE + " / " + BUN_BOT_FILE + " 为准。");
   b.push("6. P3 安全：路径（cwd / path）默认限制在工作区内；run_bash 危险命令（rm -rf /、git push、fork bomb 等）会被权限系统直接拒绝 —— 被拒后改用安全写法或 write_file。");
   b.push("7. P3 测试闸门：本会话发生过自修改（write_file / 写操作 run_bash）时，收尾会自动跑 bun test；失败会自动回滚到会话开始前 —— 不用手动 revert，被回滚后重新检查改动。");
   b.push("8. P3 审计：每次工具调用都会记录入参/出参摘要到 " + "AUDIT.log.jsonl" + "（本地持久化，gitignore）。");
