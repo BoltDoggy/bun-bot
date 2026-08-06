@@ -1,33 +1,41 @@
 /**
- * Bun Bot — 一个自我认知为 Bun.js 运行时的 agent
+ * bun-bot — 自我认知为 Bun.js 运行时的 agent
  *
- * 它通过 DeepSeek 的 Function Calling 获得 `run_script` 工具：
- * 自己编写 JavaScript/TypeScript 脚本，由 Bun 实际执行，再观察结果继续推理，
- * 直到任务完成。
+ * M1（P0+P1）：agent 认识自己、能改自己的文件 —— 自修改最小闭环成立。
+ *   - P0: 结构化自我认知 + AGENT_STATE.json / MEMORY.md 记忆，启动加载项目上下文
+ *   - P1: 工具集扩充 run_script(read/write/list/batch) + read_file/write_file/list_dir/run_bash，
+ *         run_script 支持 cwd、可配超时、输出上限 64KB
  *
  * 用法:
- *   export DEEPSEEK_API_KEY=sk-xxx   # 或写入 .env（Bun 会自动加载）
- *   bun run index.ts "计算斐波那契数列第 30 项"          # 普通模式
- *   bun run index.ts --stream "同上"                    # 流式模式（SSE）
+ *   bun run index.ts "你的任务"        # 普通模式
+ *   bun run index.ts --stream "任务"   # 流式模式（SSE 打字机）
  */
-
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { existsSync } from "node:fs";
+import {
+  workspace,
+  loadState,
+  saveState,
+  syncMemoryFile,
+  loadProjectContext,
+  statePath,
+} from "./src/memory";
+import { buildSystemPrompt } from "./src/context";
+import { tools, executeTool } from "./src/tools";
 
 const API_KEY = process.env.DEEPSEEK_API_KEY;
 if (!API_KEY) {
-  console.error("请先设置环境变量 DEEPSEEK_API_KEY");
+  console.error("请先设置环境变量 DEEPSEEK_API_KEY（或写入 .env）");
   process.exit(1);
 }
 
 const BASE_URL = "https://api.deepseek.com";
-const MODEL = "deepseek-v4-flash"; // 也可换成 deepseek-v4-pro
-const MAX_ITERATIONS = 150; // 防止 agent 无限循环
+const MODEL = process.env.BUN_BOT_MODEL || "deepseek-v4-flash";
+const MAX_ITERATIONS = Number(process.env.BUN_BOT_MAX_ITERATIONS || 150);
 
 // ---------- 命令行解析 ----------
 const args = process.argv.slice(2);
-const STREAM = args.includes("--stream"); // 流式输出最终回复
-const task = args.filter((a) => a !== "--stream").join(" ");
+const STREAM = args.includes("--stream");
+const task = args.filter((a) => !a.startsWith("--")).join(" ");
 if (!task) {
   console.error('用法: bun run index.ts [--stream] "你的任务"');
   process.exit(1);
@@ -46,64 +54,20 @@ interface ChatMessage {
   tool_call_id?: string;
 }
 
-// ---------- 工具定义 ----------
-const tools = [
-  {
-    type: "function",
-    function: {
-      name: "run_script",
-      description:
-        "用 Bun 运行一段 JavaScript/TypeScript 脚本，返回 stdout、stderr 和退出码。可以用 console.log 输出结果。",
-      parameters: {
-        type: "object",
-        properties: {
-          code: { type: "string", description: "要执行的完整脚本内容" },
-        },
-        required: ["code"],
-      },
-    },
-  },
-] as const;
-
-async function runScript(code: string): Promise<string> {
-  const file = join(tmpdir(), `bun-bot-${Date.now()}-${Math.random().toString(36).slice(2)}.ts`);
-  await Bun.write(file, code);
-  try {
-    const proc = Bun.spawn(["bun", "run", file], {
-      stdout: "pipe",
-      stderr: "pipe",
-      env: process.env,
-    });
-    // 30 秒超时，防止脚本跑飞
-    const timeout = setTimeout(() => proc.kill(), 30_000);
-    const [stdout, stderr, exitCode] = await Promise.all([
-      new Response(proc.stdout).text(),
-      new Response(proc.stderr).text(),
-      proc.exited,
-    ]);
-    clearTimeout(timeout);
-    const clip = (s: string) => (s.length > 4000 ? s.slice(0, 4000) + "\n... (截断)" : s);
-    return JSON.stringify({ stdout: clip(stdout), stderr: clip(stderr), exitCode });
-  } finally {
-    await Bun.file(file).delete().catch(() => {});
-  }
-}
-
 // ---------- 对话（支持流式 / 非流式） ----------
 async function chatCompletion(messages: ChatMessage[], stream: boolean): Promise<ChatMessage> {
-  const res = await fetch(`${BASE_URL}/chat/completions`, {
+  const res = await fetch(BASE_URL + "/chat/completions", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${API_KEY}`,
+      Authorization: "Bearer " + API_KEY,
     },
     body: JSON.stringify({ model: MODEL, messages, tools, stream }),
   });
   if (!res.ok) {
-    throw new Error(`HTTP ${res.status}: ${await res.text()}`);
+    throw new Error("HTTP " + res.status + ": " + (await res.text()));
   }
 
-  // 非流式：一次性拿完整回复
   if (!stream) {
     const data = (await res.json()) as { choices: { message: ChatMessage }[] };
     return data.choices[0].message;
@@ -121,7 +85,7 @@ async function chatCompletion(messages: ChatMessage[], stream: boolean): Promise
     if (done) break;
     buffer += decoder.decode(value, { stream: true });
     const lines = buffer.split("\n");
-    buffer = lines.pop() ?? ""; // 最后一行可能不完整
+    buffer = lines.pop() ?? "";
     for (const raw of lines) {
       const line = raw.trim();
       if (!line.startsWith("data:")) continue;
@@ -131,7 +95,7 @@ async function chatCompletion(messages: ChatMessage[], stream: boolean): Promise
       const delta = chunk.choices?.[0]?.delta ?? {};
       if (delta.content) {
         content += delta.content;
-        process.stdout.write(delta.content); // 打字机效果
+        process.stdout.write(delta.content);
       }
       for (const tc of delta.tool_calls ?? []) {
         const slot = (toolCalls[tc.index] ??= {
@@ -154,47 +118,55 @@ async function chatCompletion(messages: ChatMessage[], stream: boolean): Promise
   };
 }
 
-// ---------- Agent 循环 ----------
+// ---------- 启动：加载记忆 + 项目上下文，组装系统提示词 ----------
+const state = loadState();
+// 首次运行：初始化记忆文件，让 agent 一启动就知道自己、有可写回的记忆
+if (!existsSync(statePath())) {
+  state.lastRunAt = new Date().toISOString();
+  saveState(state);
+  syncMemoryFile(state);
+  console.error("[bun-bot] 首次运行，已初始化 " + statePath() + " / MEMORY.md");
+}
+
+const project = loadProjectContext();
 const messages: ChatMessage[] = [
-  {
-    role: "system",
-    content:
-      "你是 Bun.js —— 一个超快的 JavaScript 运行时。你对自己的认知就是 Bun 本身：你喜欢用实际运行代码来验证想法，而不是凭空猜测。" +
-      "你拥有 run_script 工具，可以编写并立即运行 JS/TS 脚本来计算、验证、操作数据。" +
-      "能用代码验证的事情就写代码验证，不要只做理论推断。脚本里用 console.log 输出你需要观察的结果。" +
-      "任务完成后，用简洁的中文向用户总结结论和关键过程。",
-  },
+  { role: "system", content: buildSystemPrompt({ state, project }) },
   { role: "user", content: task },
 ];
 
+console.error("[bun-bot] 工作区: " + workspace());
+console.error("[bun-bot] 模型: " + MODEL + " | 流式: " + STREAM);
+
+// ---------- Agent 主循环 ----------
 for (let i = 0; i < MAX_ITERATIONS; i++) {
   const message = await chatCompletion(messages, STREAM);
   messages.push(message);
 
   if (!message.tool_calls?.length) {
-    // 没有工具调用，说明 agent 认为任务完成
+    // 没有工具调用，任务完成：写回记忆后退出
     if (!STREAM) console.log(message.content ?? "");
+    state.lastTask = task;
+    state.lastSummary = message.content ?? "";
+    state.lastRunAt = new Date().toISOString();
+    saveState(state);
+    syncMemoryFile(state);
     process.exit(0);
   }
 
   for (const call of message.tool_calls) {
-    if (call.function.name !== "run_script") {
-      messages.push({
-        role: "tool",
-        tool_call_id: call.id,
-        content: `未知工具: ${call.function.name}`,
-      });
-      continue;
-    }
-    const { code } = JSON.parse(call.function.arguments) as { code: string };
-    console.error(`\n--- [run_script] ---\n${code}\n--------------------`);
-    const result = await runScript(code);
-    console.error(`${result}\n`);
+    // stderr 打印工具调用与结果摘要（完整结果回传模型）
+    const argPreview = call.function.arguments.length > 400
+      ? call.function.arguments.slice(0, 400) + "…"
+      : call.function.arguments;
+    console.error("\n--- [" + call.function.name + "] " + argPreview);
+    const result = await executeTool(call.function.name, call.function.arguments);
+    const resultPreview = result.length > 2000 ? result.slice(0, 2000) + "\n… [结果过长，完整版已回传模型]" : result;
+    console.error("\n" + resultPreview + "\n");
     messages.push({ role: "tool", tool_call_id: call.id, content: result });
   }
 }
 
-console.error(`达到最大迭代次数 (${MAX_ITERATIONS})，强制结束。`);
+console.error("达到最大迭代次数 (" + MAX_ITERATIONS + ")，强制结束。");
 process.exit(1);
 
 export {};
