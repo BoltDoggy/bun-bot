@@ -1,14 +1,15 @@
 # 现状分析（as-is）
 
-基于对 index.ts / src/ / skills/ / tests/ 的实际阅读与统计，更新于 **M1（P0+P1）+ skills 能力 + AGENTS.md 项目指令落地之后**。
+基于对 index.ts / src/ / skills/ / tests/ 的实际阅读与统计，更新于 **M1（P0+P1）+ skills 能力 + AGENTS.md 项目指令 + P2-1 工具描述 ACI 化落地之后**。
 
 ## 快照数据
 
 | 项 | 值 |
 | --- | --- |
 | index.ts | 163 行 / 5.6 KB（入口：CLI 解析 + agent 主循环，保持轻量） |
-| src/ | tools.ts 336 行 / 12.8 KB · context.ts 116 行 / 5.6 KB · memory.ts 199 行 / 6.8 KB · git.ts 42 行 / 1.4 KB |
+| src/ | tools.ts 330 行 / 14.8 KB · context.ts 85 行 / 6.3 KB · memory.ts 199 行 / 6.8 KB · git.ts 42 行 / 1.4 KB |
 | 工具数量 | 5 个：`run_script` / `read_file` / `write_file` / `list_dir` / `run_bash`（skills 不加新工具） |
+| 工具描述 ACI 化 | ✅ P2-1 已完成：5 个工具 `description` 均带「示例：」JSON 参数形态的 example usage，参数语义同步打磨；系统提示词 [能力] 区块带极简 few-shot（双保险） |
 | 项目级指令 | `AGENTS.md`（可选）：存在时由 `loadProjectContext` 加载进 [项目] 区块最前，[规则] 第 5 条声明其约束力（优先级高于 README/docs）；不存在时静默跳过 |
 | skills | 1 个：`web-search` v2（search.ts / self-test.ts / samples/），索引进 [能力] 区块，细节按需 read_file |
 | 模型 | `deepseek-v4-flash`（`BUN_BOT_MODEL` 可换，如 `deepseek-v4-pro`） |
@@ -18,7 +19,7 @@
 | read_file 硬上限 | 1MB（`MAX_READ_BYTES`） |
 | 记忆 | `AGENT_STATE.json` / `MEMORY.md` 本地跨会话持久化（gitignore，不纳入版本控制，避免每次会话的写回噪音） |
 | 自修改安全 | `write_file` 落盘前自动 git 快照 + 返回行级 diff 摘要 |
-| 自测 | 17 用例 / 67 expect，零外部依赖（`bun test`）；web-search 另有 `self-test.ts --online` 在线实测 |
+| 自测 | 19 用例 / 87 expect，零外部依赖（`bun test`）；web-search 另有 `self-test.ts --online` 在线实测 |
 
 ## 模块解剖
 
@@ -32,15 +33,15 @@ skills/               组合操作库：skills/<name>/SKILL.md + 实现 + 离线
 tests/tools.test.ts   self-test 用例（agent 修改自身代码后的验证闸门）
 ```
 
-## 工具集（5 个）
+## 工具集（5 个，description 均带 example usage）
 
-| 工具 | 说明 |
-| --- | --- |
-| `run_script` | Bun 运行 JS/TS，默认沙箱 tmpdir，可指定 cwd 到工作区；`timeoutMs` 可配；输出 64KB 带偏移 |
-| `read_file` | 读工作区文件，默认完整返回 64KB，可 offset 续读（单次硬上限 1MB） |
-| `write_file` | 写工作区文件，自动 git 快照 + 返回行级 diff 摘要（改自己代码就靠它） |
-| `list_dir` | 列目录（`-a` 显示隐藏文件、`depth` 限制递归深度） |
-| `run_bash` | shell 命令，cwd 默认工作区，可跑 git / bun test 等 |
+| 工具 | 说明 | 示例 |
+| --- | --- | --- |
+| `run_script` | Bun 运行 JS/TS，默认沙箱 tmpdir，可指定 cwd 到工作区；`timeoutMs` 可配；输出 64KB 带偏移 | `{"code":"console.log(1+1)"}` |
+| `read_file` | 读工作区文件，默认完整返回 64KB，可 offset 续读（单次硬上限 1MB） | `{"path":"src/tools.ts","offset":65536}` |
+| `write_file` | 写工作区文件，自动 git 快照 + 返回行级 diff 摘要（改自己代码就靠它） | `{"path":"src/hello.ts","content":"..."}` |
+| `list_dir` | 列目录（`-a` 显示隐藏文件、`depth` 限制递归深度） | `{"path":".","all":true,"depth":2}` |
+| `run_bash` | shell 命令，cwd 默认工作区，可跑 git / bun test 等 | `{"command":"bun test"}` |
 
 ## 项目级指令（AGENTS.md，可选）
 
@@ -69,7 +70,7 @@ tests/tools.test.ts   self-test 用例（agent 修改自身代码后的验证闸
 4. 循环：`chatCompletion` → 有 `tool_calls` 就 `executeTool` 并回填 → 直到无工具调用
 5. 任务完成 → 写回 `lastTask` / `lastSummary` / `lastRunAt` → 退出
 
-## 已解决的旧差距（M1 + skills + AGENTS.md）
+## 已解决的旧差距（M1 + skills + AGENTS.md + P2-1）
 
 1. ~~不认识自己~~ → 系统提示词五区块，启动加载 README + docs 索引 + 记忆
 2. ~~无记忆~~ → `AGENT_STATE.json` / `MEMORY.md` 持久化，重启可引用上次决策
@@ -77,11 +78,13 @@ tests/tools.test.ts   self-test 用例（agent 修改自身代码后的验证闸
 4. ~~输出被截断~~ → 4000 → 65536 字符，截断带偏移可续读
 5. ~~跨会话能力只能留在 lastSummary~~ → skills 组合操作库：SKILL.md 固化「多步 + 有坑 + 会过时」的操作（web-search v2 的修正教训永久沉淀），索引进提示词、按需 read_file、自带自测
 6. ~~项目约定无处安放~~ → `AGENTS.md` 项目级指令：用户与 agent 的契约，加载进 [项目] 最前 + [规则] 声明约束力，接入通用 AGENTS.md 工具链
+7. ~~工具描述无示例（few-shot 缺失）~~ → P2-1 工具描述 ACI 化：5 工具 description 均带 example usage + 参数语义打磨，[能力] 区块同步 few-shot（learn 工具设计五原则之五落地）
 
 ## 仍存在的差距（M2 / M3）
 
-7. **长任务无支撑**：没有进度 checkpoint、没有 `--resume` 续跑、没有上下文预算管理（`budget.ts` 未实现），>100 轮容易迷失。
-8. **回滚靠手动**：git 快照已自动打，但测试闸门、自动 revert、审计日志属 P3，尚未落地。
-9. **`--self` 模式未实现**：还不能"只出 diff 预览 → 确认后应用"，自迭代仍需人在场确认。
+8. **长任务无支撑**：没有进度 checkpoint、没有 `--resume` 续跑、没有上下文预算管理（`budget.ts` 未实现），>100 轮容易迷失。
+9. **任务模式未实现**：agent 首轮产出 plan 逐项勾选、进度写回 `AGENT_STATE.json` 尚未落地（P2 第 2 项）。
+10. **回滚靠手动**：git 快照已自动打，但测试闸门、自动 revert、审计日志属 P3，尚未落地。
+11. **`--self` 模式未实现**：还不能"只出 diff 预览 → 确认后应用"，自迭代仍需人在场确认。
 
 > 迭代计划见 [PLAN.md](./PLAN.md)。
