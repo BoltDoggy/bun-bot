@@ -1,5 +1,5 @@
 /**
- * tools.ts — 工具定义与执行器（注册表模式，P1）
+ * tools.ts — 工具定义与执行器（注册表模式，P1 + P2-2 任务模式）
  *
  * 工具清单：
  *   run_script  用 Bun 运行 JS/TS（cwd 可指定工作区，默认 tmpdir；超时可配；输出上限 64KB）
@@ -7,8 +7,9 @@
  *   write_file  写工作区文件（自动 git 快照 + diff 摘要）
  *   list_dir    列目录（-a 显示隐藏文件、深度限制）
  *   run_bash    执行 shell 命令（cwd 可指定工作区）
+ *   update_plan 更新任务计划（P2-2 任务模式：首轮产出 plan、逐项勾选，进度写回 AGENT_STATE.json）
  *
- * P2-1 ACI 化：5 个工具的 description 均带 example usage（工具设计五原则之五——
+ * P2-1 ACI 化：所有工具的 description 均带 example usage（工具设计五原则之五——
  *              描述/spec 会进上下文，能直接引导工具调用行为；示例即 few-shot）。
  *
  * 新增工具：往 registry 数组里加一个 { def, run } 即可，agent 就能看到并调用它。
@@ -16,7 +17,7 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { isAbsolute, join, relative, resolve, dirname } from "node:path";
-import { workspace } from "./memory";
+import { workspace, loadState, saveState, syncMemoryFile } from "./memory";
 import { snapshot } from "./git";
 
 export const DEFAULT_OUTPUT_LIMIT = 65536; // P1: 4K → 64KB，1M 上下文下完整回传
@@ -205,6 +206,55 @@ async function runRunBash(args: { command?: string; cwd?: string; timeoutMs?: nu
   });
 }
 
+// ---------- 任务模式：update_plan（P2-2） ----------
+
+interface PlanArgs {
+  title?: string;
+  items?: { text?: string; done?: boolean; detail?: string }[];
+}
+
+/**
+ * 更新任务计划（全量覆盖式）。每次提交完整计划（含已完成项），
+ * 进度写回 AGENT_STATE.json + MEMORY.md（跨会话保存，中断可恢复）。
+ * 全部 done 时 status 自动置为 "done"。
+ */
+async function runUpdatePlan(args: PlanArgs): Promise<string> {
+  if (!Array.isArray(args.items) || args.items.length === 0) {
+    return JSON.stringify({ error: "缺少 items 数组（计划条目，至少 1 项）。示例：{\"title\":\"新增工具\",\"items\":[{\"text\":\"注册工具\",\"done\":false}]}" });
+  }
+  const items = args.items.map((it) => ({
+    text: String(it?.text ?? "").trim(),
+    done: it?.done === true,
+    detail: it?.detail?.trim() || undefined,
+  }));
+  if (items.some((it) => !it.text)) {
+    return JSON.stringify({ error: "items 每项必须含非空 text" });
+  }
+  const state = loadState();
+  const now = new Date().toISOString();
+  const prev = state.activePlan;
+  const doneCount = items.filter((it) => it.done).length;
+  state.activePlan = {
+    title: (args.title?.trim() || prev?.title || "未命名任务").slice(0, 200),
+    createdAt: prev?.createdAt ?? now,
+    updatedAt: now,
+    items,
+    status: doneCount === items.length ? "done" : "active",
+  };
+  saveState(state);
+  syncMemoryFile(state);
+  return JSON.stringify({
+    title: state.activePlan.title,
+    status: state.activePlan.status,
+    items: state.activePlan.items,
+    doneCount,
+    total: items.length,
+    percent: Math.round((doneCount / items.length) * 100),
+    saved: true,
+    note: "进度已写回 " + "AGENT_STATE.json" + "（跨会话保存）",
+  });
+}
+
 // ---------- 注册表 ----------
 
 export interface ToolDefinition {
@@ -234,13 +284,13 @@ const registry: RegisteredTool[] = [
         description:
           "用 Bun 运行一段 JavaScript/TypeScript 脚本，返回 JSON：{ cwd, stdout, stderr, exitCode, timedOut }。" +
           "默认 cwd 是临时目录（沙箱），可指定 cwd 到工作区来读写项目文件。输出上限 64KB，截断处带偏移。" +
-          "示例：{\"code\":\"console.log(1+1)\"}（沙箱算个表达式）；" +
-          "{\"code\":\"await Bun.write('x.txt','hi')\",\"cwd\":\".\"}（在工作区落文件，顶层 await 可用）",
+          "示例：{\\\"code\\\":\\\"console.log(1+1)\\\"}（沙箱算个表达式）；" +
+          "{\\\"code\\\":\\\"await Bun.write('x.txt','hi')\\\",\\\"cwd\\\":\\\".\\\"}（在工作区落文件，顶层 await 可用）",
         parameters: {
           type: "object",
           properties: {
             code: { type: "string", description: "要执行的完整 JS/TS 脚本源码（必填）。脚本内用 console.log 输出需要观察的结果" },
-            cwd: { type: "string", description: "可选。脚本工作目录，相对路径基于工作区（如 \".\" = 工作区根）。不传则用临时沙箱目录" },
+            cwd: { type: "string", description: "可选。脚本工作目录，相对路径基于工作区（如 \\\".\\\" = 工作区根）。不传则用临时沙箱目录" },
             timeoutMs: { type: "number", description: "可选。超时毫秒数，默认 30000，长任务可放开（如 120000）" },
           },
           required: ["code"],
@@ -256,8 +306,8 @@ const registry: RegisteredTool[] = [
         name: "read_file",
         description:
           "读取工作区文件（UTF-8 文本），默认完整返回（上限 64KB）。超出部分在返回的 totalBytes / returnedRange / truncated 里说明，用 offset 偏移续读。" +
-          "示例：{\"path\":\"src/tools.ts\"}（读前 64KB）；" +
-          "{\"path\":\"src/tools.ts\",\"offset\":65536}（从偏移 65536 续读后半段）",
+          "示例：{\\\"path\\\":\\\"src/tools.ts\\\"}（读前 64KB）；" +
+          "{\\\"path\\\":\\\"src/tools.ts\\\",\\\"offset\\\":65536}（从偏移 65536 续读后半段）",
         parameters: {
           type: "object",
           properties: {
@@ -279,7 +329,7 @@ const registry: RegisteredTool[] = [
         description:
           "写工作区文件（覆盖式）。自动创建父目录、落盘前自动 git 快照（可回滚），返回 JSON：{ path, bytesWritten, gitSnapshot, diff }（diff 为行级摘要）。" +
           "这是 agent 修改自身代码的落盘工具。" +
-          "示例：{\"path\":\"src/hello.ts\",\"content\":\"console.log('hi')\"}（新建）；同参再写即覆盖已有文件",
+          "示例：{\\\"path\\\":\\\"src/hello.ts\\\",\\\"content\\\":\\\"console.log('hi')\\\"}（新建）；同参再写即覆盖已有文件",
         parameters: {
           type: "object",
           properties: {
@@ -299,7 +349,7 @@ const registry: RegisteredTool[] = [
         name: "list_dir",
         description:
           "列出目录内容（带缩进的文件树），返回 JSON：{ root, depth, entries, tree }。默认不显示隐藏文件，深度 3（最大 8）。" +
-          "示例：{\"path\":\".\",\"depth\":2}（看工作区根两层）；{\"path\":\".\",\"all\":true}（含隐藏文件）",
+          "示例：{\\\"path\\\":\\\".\\\",\\\"depth\\\":2}（看工作区根两层）；{\\\"path\\\":\\\".\\\",\\\"all\\\":true}（含隐藏文件）",
         parameters: {
           type: "object",
           properties: {
@@ -321,7 +371,7 @@ const registry: RegisteredTool[] = [
         description:
           "在 shell 中执行命令（bash -c），返回 JSON：{ cwd, command, stdout, stderr, exitCode, timedOut }。" +
           "默认 cwd 是工作区，可指定其他目录。可用于 git、bun install、测试等。输出上限 64KB。" +
-          "示例：{\"command\":\"bun test\"}（跑测试闸门）；{\"command\":\"git status --short\"}（看改动）",
+          "示例：{\\\"command\\\":\\\"bun test\\\"}（跑测试闸门）；{\\\"command\\\":\\\"git status --short\\\"}（看改动）",
         parameters: {
           type: "object",
           properties: {
@@ -334,6 +384,41 @@ const registry: RegisteredTool[] = [
       },
     },
     run: (a) => runRunBash(a as { command?: string; cwd?: string; timeoutMs?: number }),
+  },
+  {
+    def: {
+      type: "function",
+      function: {
+        name: "update_plan",
+        description:
+          "更新任务计划（任务模式，全量覆盖式）。返回 JSON：{ title, status, items, doneCount, total, percent, saved }。" +
+          "复杂任务首轮用它创建计划（title + 拆成可独立验证的分步 items），每完成一步就重新提交完整计划并勾选该项（done: true，detail 写验证结果）。" +
+          "进度写回 AGENT_STATE.json 跨会话保存：中断/重启后可从上次断点继续。title 首次给出后，后续勾选可省略（保留原标题）。" +
+          "示例：{\\\"title\\\":\\\"新增 read_file 工具\\\",\\\"items\\\":[{\\\"text\\\":\\\"在 tools.ts 注册\\\",\\\"done\\\":false},{\\\"text\\\":\\\"补文档与测试\\\",\\\"done\\\":false}]}（首轮创建）；" +
+          "{\\\"items\\\":[{\\\"text\\\":\\\"在 tools.ts 注册\\\",\\\"done\\\":true,\\\"detail\\\":\\\"bun test 通过\\\"},{\\\"text\\\":\\\"补文档与测试\\\",\\\"done\\\":false}]}（完成第一步后勾选）",
+        parameters: {
+          type: "object",
+          properties: {
+            title: { type: "string", description: "可选。计划标题。首次创建时建议给出；后续勾选可省略（保留原标题）" },
+            items: {
+              type: "array",
+              description: "计划条目（全量覆盖，必填）。每项 { text, done?, detail? }：text 步骤描述（必填）、done 是否完成（默认 false）、detail 完成时的验证说明（可选）",
+              items: {
+                type: "object",
+                properties: {
+                  text: { type: "string", description: "步骤描述（必填）" },
+                  done: { type: "boolean", description: "是否已完成，默认 false" },
+                  detail: { type: "string", description: "可选。完成时的说明（怎么验证的）" },
+                },
+                required: ["text"],
+              },
+            },
+          },
+          required: ["items"],
+        },
+      },
+    },
+    run: (a) => runUpdatePlan(a as PlanArgs),
   },
 ];
 
