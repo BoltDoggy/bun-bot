@@ -1,12 +1,14 @@
 /**
- * tools.test.ts — M1 自测闸门（+ skills 层 + AGENTS.md 项目指令 + P2-1 ACI 化 + P2-2 任务模式 + P2-3 上下文预算 + P2-4 checkpoint）
+ * tools.test.ts — M1 自测闸门（+ skills 层 + AGENTS.md 项目指令 + P2-1 ACI 化 + P2-2 任务模式 + P2-3 上下文预算 + P2-4 checkpoint + P3 质量与防护）
  *
  * 覆盖：run_script（沙箱 cwd / 工作区 cwd）、read_file（偏移续读）、write_file（diff）、
  *       list_dir（-a）、run_bash、输出截断、工具描述 example usage（P2-1）、
  *       记忆读写、skills 索引、web-search 解析器、AGENTS.md 项目级指令加载与优先级、
  *       update_plan 任务计划（P2-2：创建/勾选/完成度/记忆往返/任务模式提示词）、
  *       budget.ts 上下文预算（P2-3：token 估算 / tool result clearing 压缩 / 告警展示）、
- *       checkpoint 断点续跑（P2-4：save/load/clear 往返 + buildResumeMessages 恢复组装）。
+ *       checkpoint 断点续跑（P2-4：save/load/clear 往返 + buildResumeMessages 恢复组装）、
+ *       P3-1 run_bash 写操作自动快照、P3-2 测试闸门（runTestGate / revertToHead / enforceTestGate）、
+ *       P3-3 路径限制 + 危险命令黑名单、P3-4 审计日志（appendAudit / loadAudit 往返）。
  *
  * 运行：bun test  或  bun run tests/tools.test.ts
  */
@@ -40,6 +42,10 @@ import {
 import { skillsIndex, buildSystemPrompt } from "../src/context";
 import { estimateTokens, estimateMessagesTokens, compressContext, type ChatMessage } from "../src/budget";
 import { parseBingHtml, parseDdgHtml } from "../skills/web-search/search";
+// P3：git 安全阀 / 测试闸门 / 审计日志
+import { hasUncommittedChanges, currentHead } from "../src/git";
+import { runTestGate, revertToHead, enforceTestGate, hasTestSignal } from "../src/gate";
+import { appendAudit, loadAudit, auditPath } from "../src/audit";
 
 let tmp: string;
 beforeAll(() => {
@@ -569,4 +575,133 @@ test("buildResumeMessages：末尾 tool 补 user 兜底 + 可选新任务追加"
   // 新任务为空白：不追加
   const r4 = buildResumeMessages([{ role: "user", content: "原任务" }], "   ");
   expect(r4.length).toBe(1);
+});
+
+// ---------- P3-1 git 安全阀补 run_bash ----------
+
+test("P3-1 run_bash 写操作命令前自动 git 快照，只读命令不产生噪音提交", async () => {
+  // 在测试沙箱初始化 git 仓库（仓库级 user 配置），初始 commit = clean
+  const init = JSON.parse(await executeTool("run_bash", JSON.stringify({
+    command: "git init -q && git config user.email p3@test && git config user.name p3-test && git add -A && git commit -qm init",
+  })));
+  expect(init.exitCode).toBe(0);
+  expect(await hasUncommittedChanges(tmp)).toBe(false);
+  // 只读命令：不触发快照（无 gitSnapshot 字段）
+  const ro = JSON.parse(await executeTool("run_bash", JSON.stringify({ command: "git status --short" })));
+  expect(ro.exitCode).toBe(0);
+  expect(ro.gitSnapshot).toBeUndefined();
+  // 制造未提交改动（write_file 落盘后工作区 dirty）
+  const wf = JSON.parse(await executeTool("write_file", JSON.stringify({ path: "p3-dirty.txt", content: "dirty" })));
+  expect(wf.diff).toContain("+1 / -0");
+  expect(await hasUncommittedChanges(tmp)).toBe(true);
+  // 写操作命令（touch）：工作区 dirty → 先自动快照（返回 gitSnapshot，可回滚）
+  const w = JSON.parse(await executeTool("run_bash", JSON.stringify({ command: "touch p3-b.txt" })));
+  expect(w.exitCode).toBe(0);
+  expect(w.gitSnapshot).toContain("已提交 git 快照");
+  // 快照已把 p3-dirty.txt 入库；p3-b.txt 是新未跟踪文件 → 仍 dirty
+  expect(await hasUncommittedChanges(tmp)).toBe(true);
+  // 回滚验证：reset 到快照后的 HEAD + clean 清未跟踪 → 两个文件都消失
+  const head = await currentHead(tmp);
+  expect(head).toMatch(/^[0-9a-f]{40}$/);
+  const rev = await revertToHead(head!, tmp);
+  expect(rev.reverted).toBe(true);
+  expect(existsSync(join(tmp, "p3-dirty.txt"))).toBe(false);
+  expect(existsSync(join(tmp, "p3-b.txt"))).toBe(false);
+});
+
+// ---------- P3-3 沙箱权限分级 ----------
+
+test("P3-3 路径限制：read_file / write_file / run_bash / run_script 超出工作区被拒绝", async () => {
+  const r1 = JSON.parse(await executeTool("read_file", JSON.stringify({ path: "/etc/hosts" })));
+  expect(r1.error).toContain("超出工作区");
+  const r2 = JSON.parse(await executeTool("write_file", JSON.stringify({ path: "/tmp/evil.txt", content: "x" })));
+  expect(r2.error).toContain("超出工作区");
+  const r3 = JSON.parse(await executeTool("run_bash", JSON.stringify({ command: "pwd", cwd: "/tmp" })));
+  expect(r3.error).toContain("超出工作区");
+  const r4 = JSON.parse(await executeTool("run_script", JSON.stringify({ code: "console.log(1)", cwd: "/tmp" })));
+  expect(r4.error).toContain("超出工作区");
+  // 工作区内绝对路径仍可用
+  const ok = JSON.parse(await executeTool("read_file", JSON.stringify({ path: join(tmp, "README.md") })));
+  expect(ok.error).toBeUndefined();
+  expect(ok.content).toContain("sandbox project");
+});
+
+test("P3-3 危险命令黑名单：rm -rf /、git push、fork bomb 被拒绝，安全命令放行", async () => {
+  const bad = [
+    "rm -rf /",
+    "rm -rf /tmp/x",
+    "git push origin main",
+    "echo x | sudo rm -rf /tmp/y",
+    ":(){ :|:& };:",
+  ];
+  for (const cmd of bad) {
+    const r = JSON.parse(await executeTool("run_bash", JSON.stringify({ command: cmd })));
+    expect(r.error).toContain("危险命令");
+    expect(r.exitCode).toBeUndefined(); // 未真正执行
+  }
+  const ok = JSON.parse(await executeTool("run_bash", JSON.stringify({ command: "echo safe-$((1+1))" })));
+  expect(ok.exitCode).toBe(0);
+  expect(ok.stdout.trim()).toBe("safe-2");
+});
+
+// ---------- P3-4 审计日志 ----------
+
+test("P3-4 审计日志：appendAudit 落盘 AUDIT.log.jsonl，loadAudit 读回（最新在前，长摘要截断）", async () => {
+  const p = auditPath();
+  if (existsSync(p)) rmSync(p);
+  appendAudit({ ts: "2026-08-06T00:00:00.000Z", round: 1, tool: "run_script", args: "console.log(1)", result: "{\"exitCode\":0}", exitCode: 0 });
+  appendAudit({ ts: "2026-08-06T00:00:01.000Z", round: 2, tool: "write_file", args: "{\"path\":\"a.ts\"}", result: "{\"bytesWritten\":1}" });
+  expect(existsSync(p)).toBe(true);
+  const entries = loadAudit();
+  expect(entries.length).toBe(2);
+  expect(entries[0].tool).toBe("write_file"); // 最新在前
+  expect(entries[0].round).toBe(2);
+  expect(entries[1].tool).toBe("run_script");
+  expect(entries[1].exitCode).toBe(0);
+  // 超长入参/出参被截断（clipOutput 400 / 500 + 截断标记）
+  appendAudit({ ts: "2026-08-06T00:00:02.000Z", round: 3, tool: "run_bash", args: "y".repeat(1000), result: "z".repeat(1000) });
+  const e = loadAudit(1)[0];
+  expect(e.args.length).toBeLessThan(500);
+  expect(e.result.length).toBeLessThan(600);
+  rmSync(p); // 清理
+});
+
+// ---------- P3-2 测试闸门（verify its work） ----------
+
+test("P3-2 测试闸门：runTestGate 通过/失败 + enforceTestGate 失败自动回滚并复测通过", async () => {
+  // 独立子仓库（不污染主沙箱的 git 状态）
+  const base = join(tmp, "p3-gate");
+  mkdirSync(join(base, "tests"), { recursive: true });
+  writeFileSync(join(base, "package.json"), JSON.stringify({ name: "p3-gate", private: true }));
+  writeFileSync(join(base, "tests", "ok.test.ts"), "import { test, expect } from 'bun:test';\ntest('ok', () => expect(1).toBe(1));\n");
+  // git init + 初始 commit（= 会话起点 HEAD）
+  const init = JSON.parse(await executeTool("run_bash", JSON.stringify({
+    command: "git init -q && git config user.email p3@test && git config user.name p3-test && git add -A && git commit -qm init",
+    cwd: "p3-gate",
+  })));
+  expect(init.exitCode).toBe(0);
+  const head = await currentHead(base);
+  expect(head).toMatch(/^[0-9a-f]{40}$/);
+  expect(hasTestSignal(base)).toBe(true);
+  // 初始测试通过
+  const g1 = await runTestGate({ base });
+  expect(g1.passed).toBe(true);
+  // 写坏补丁（语法错误测试文件，未跟踪）→ 测试失败
+  writeFileSync(join(base, "tests", "broken.test.ts"), "this is not valid ts (((\n");
+  const g2 = await runTestGate({ base });
+  expect(g2.passed).toBe(false);
+  // 测试闸门：自动回滚到会话起点 + 复测通过
+  const gate = await enforceTestGate(head, { base });
+  expect(gate.rolledBack).toBe(true);
+  expect(gate.passed).toBe(true);
+  expect(existsSync(join(base, "tests", "broken.test.ts"))).toBe(false); // clean -fd 删掉坏文件
+  // revertToHead 恢复被改的跟踪文件
+  writeFileSync(join(base, "tests", "ok.test.ts"), "broken!!!");
+  const rev = await revertToHead(head, base);
+  expect(rev.reverted).toBe(true);
+  expect(readFileSync(join(base, "tests", "ok.test.ts"), "utf8")).toContain("test('ok'");
+  // 无测试信号（无 package.json / tests/）时测试闸门跳过：passed 不误报
+  const noSignal = await runTestGate({ base: tmp });
+  expect(noSignal.passed).toBe(true);
+  expect(noSignal.output).toContain("无测试信号");
 });
