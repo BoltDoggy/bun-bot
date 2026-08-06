@@ -28,8 +28,8 @@
 | 沙箱权限分级 | ✅ P3-3 已完成：路径（cwd / path）默认限制工作区内（`BUN_BOT_ALLOW_OUTSIDE_CWD=1` 放行）；`run_bash` 危险命令黑名单（rm -rf /、git push、fork bomb、sudo、设备写入等）直接拒绝；`BUN_BOT_PERMISSIONS=ask` 时写操作命令需确认 |
 | 审计日志 | ✅ P3-4 已完成：`src/audit.ts` —— 每次工具调用入参/出参摘要落盘 `AUDIT.log.jsonl`（gitignore），`appendAudit` 内部防御性截断（400 / 500），`loadAudit` 最新在前 |
 | 编译产物自举 | ✅ 已落地：`run_script` spawn 自身（`process.execPath`：源码时=bun、编译时=编译产物）；入口 `run <script>` 子命令（index.ts 拦截于 API key 检查前）用内嵌运行时执行外部脚本，且 `init` / `--version` / `--help` 同样走 API key 检查前拦截（编译产物 = 完整 CLI） —— `bun build --compile` 后无 bun 环境也能跑（端到端实测：PATH 仅 /usr/bin:/bin 下 `./bun-bot-demo run <script>` exitCode 0，Bun API / 相对 import / 顶层 await 全可用） |
-| 全平台分发 | ✅ P5 已完成：`.github/workflows/build.yml` 原生矩阵构建 6 平台（ubuntu-latest → linux-x64 / ubuntu-24.04-arm → linux-arm64 / macos-13 → darwin-x64 / macos-latest → darwin-arm64 / windows-latest → windows-x64 / windows-11-arm → windows-arm64 实验性），tag `v*` 自动发布 Release（每个产物附 `.sha256`）、手动触发只出 artifact；`scripts/install.sh`（macOS/Linux）+ `scripts/install.ps1`（Windows）一行安装：检测平台 → 下载 → SHA256 校验 → 安装为 bun-bot（命令统一不带平台后缀）→ PATH；`scripts/build.sh` 本地与 CI 共用（bun install → bun test → bun build --compile → .sha256） |
-| 自测 | 86 用例 / 509 expect，零外部依赖（`bun test`）；web-search 另有 `self-test.ts --online` 在线实测 |
+| 全平台分发 | ✅ P5 已完成：`.github/workflows/build.yml` 原生矩阵构建 6 平台（ubuntu-latest → linux-x64 / ubuntu-24.04-arm → linux-arm64 / macos-13 → darwin-x64 / macos-latest → darwin-arm64 / windows-latest → windows-x64 / windows-11-arm → windows-arm64 实验性），tag `v*` 自动发布 Release（每个产物附 `.sha256`）、手动触发只出 artifact；`scripts/install.sh`（macOS/Linux）+ `scripts/install.ps1`（Windows）一行安装：检测平台 → 下载（进度条）→ SHA256 校验 → 安装为 bun-bot（命令统一不带平台后缀）→ PATH；`scripts/build.sh` 本地与 CI 共用（bun install → bun test → bun build --compile → .sha256） |
+| 自测 | 87 用例 / 514 expect，零外部依赖（`bun test`）；web-search 另有 `self-test.ts --online` 在线实测 |
 
 ## 模块解剖
 
@@ -50,7 +50,7 @@ src/interactive.ts     交互模式（P4-10）：driveInteractive / isExitInput 
 src/audit.ts           审计日志（P3-4）：appendAudit / loadAudit —— 落盘 .bunbot/AUDIT.log.jsonl
 bin/bun-bot.ts         CLI 分发（P4-6）：复用 src/cli.ts 的 init / --version / --help / 透传 index.ts（bun link 全局安装；编译产物入口 index.ts 同样支持）
 skills/               组合操作库：skills/<name>/SKILL.md + 实现 + 离线样本 + 自测
-tests/                self-test 用例 86 / 509 expect（tools + memory + checkpoint + skills + AGENTS.md + P2/P3/P4 各闸门 + P5 release，零外部依赖）
+tests/                self-test 用例 87 / 514 expect（tools + memory + checkpoint + skills + AGENTS.md + P2/P3/P4 各闸门 + P5 release，零外部依赖）
 ```
 
 ## 工具集（6 个，description 均带 example usage）
@@ -72,7 +72,7 @@ tests/                self-test 用例 86 / 509 expect（tools + memory + checkp
 | 构建脚本 | `scripts/build.sh [target]`：bun install → **bun test（测试闸门先绿才出产物）** → `bun build --compile index.ts --outfile dist/bun-bot-<target>[.exe]` → 生成 `.sha256`（sha256sum / shasum 兜底）；target 白名单校验；缺省自动检测当前平台（与 install.sh 同映射） |
 | 安装脚本（unix） | `scripts/install.sh`（POSIX sh，`set -eu`）：`detect_target`（uname -s/-m → darwin/linux/windows × x64/arm64）；URL = `$BASE/latest/download/` 或 `$BASE/download/v<版本>/`；curl/wget 下载 → **SHA256 校验失败必须中止**（sha256sum -c / shasum -a 256 -c）→ `install -m 0755` 重命名为 `bun-bot` 装到 ~/.local/bin（/usr/local/bin 可写则用之）→ PATH 提示；环境变量可覆盖：`BUN_BOT_REPO` / `BUN_BOT_VERSION` / `BUN_BOT_INSTALL_DIR` / `BUN_BOT_TARGET` / `BUN_BOT_BASE_URL` |
 | 安装脚本（windows） | `scripts/install.ps1`：`PROCESSOR_ARCHITECTURE` → x64/arm64；`Invoke-WebRequest` 下载 .exe → `Get-FileHash` SHA256 校验（失败删除并中止）→ 重命名为 `bun-bot.exe` 装到 `%LOCALAPPDATA%\bun-bot\bin` → `SetEnvironmentVariable` 加用户 PATH |
-| 端到端验证 | `tests/p5-release.test.ts`（9 用例 / 45 expect）：workflow 矩阵与触发断言；build.sh 关键逻辑断言；install.sh 用本地 `Bun.serve` mock release 服务器（`BUN_BOT_BASE_URL` 指向）跑真实下载 → 校验 → 安装（可执行位用 `statSync().mode & 0o111`）；windows .exe 命名；指定版本路径；校验失败中止且不落盘；install.ps1 关键逻辑断言 |
+| 端到端验证 | `tests/p5-release.test.ts`（10 用例 / 50 expect）：workflow 矩阵与触发断言；build.sh 关键逻辑断言；install.sh 用本地 `Bun.serve` mock release 服务器（`BUN_BOT_BASE_URL` 指向）跑真实下载 → 校验 → 安装（可执行位用 `statSync().mode & 0o111`）；windows .exe 命名；指定版本路径；校验失败中止且不落盘；install.ps1 关键逻辑断言 |
 
 ## 任务模式（P2-2）
 
@@ -147,7 +147,7 @@ tests/                self-test 用例 86 / 509 expect（tools + memory + checkp
 8. ~~长任务无目标锚点~~ → P2-2 任务模式：agent 首轮产出 plan、逐项勾选，进度写回 `AGENT_STATE.json`（activePlan），中断/重启后从上次断点继续
 9. ~~长任务消息无限增长（context rot）~~ → P2-3 上下文预算：`budget.ts` token 估算 + 最轻档 tool result clearing（最早的 tool 结果摘要化，先保 recall 再迭代 precision），告警写回 contextWarnings
 10. ~~中断丢上下文~~ → P2-4 `--resume` checkpoint：`AGENT_CHECKPOINT.json` 持久化会话消息历史（每次消息变更落盘），中断后恢复完整上下文继续，任务完成自动清除
-11. ~~编译产物只能在本地单平台构建~~ → P5 全平台分发：GitHub Actions 矩阵 6 平台 + tag 自动发布 Release + `scripts/install.sh` / `install.ps1` 一行安装（下载 → SHA256 校验 → 安装）
+11. ~~编译产物只能在本地单平台构建~~ → P5 全平台分发：GitHub Actions 矩阵 6 平台 + tag 自动发布 Release + `scripts/install.sh` / `install.ps1` 一行安装（下载带进度条 → SHA256 校验 → 安装）
 
 ## P3 质量与防护（2026-08 完成）
 

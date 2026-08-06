@@ -74,7 +74,7 @@ bun-bot "分析这个项目的结构并给出建议"
 - 🌍 **通用化（P4）**：可在**任意项目**使用 —— 身份可配置、关键文件按存在性动态生成、状态文件不污染目标仓库、大项目文件树感知 .gitignore + 截断
 - ⚡ **Bun 原生执行**：脚本用 `Bun.spawn` 运行，默认沙箱 tmpdir，可指定工作区 cwd
 - 📦 **编译产物自举**：`bun build --compile` 后无 bun 环境的用户机器也能跑 `run_script`（spawn 自身，内嵌运行时执行外部脚本）
-- 🚀 **全平台分发（P5）**：6 平台（linux/darwin/windows × x64/arm64）编译产物 + 一行安装脚本（下载 → SHA256 校验 → 安装为 bun-bot 命令 → 加入 PATH）
+- 🚀 **全平台分发（P5）**：6 平台（linux/darwin/windows × x64/arm64）编译产物 + 一行安装脚本（下载带进度条 → SHA256 校验 → 安装为 bun-bot 命令 → 加入 PATH）
 
 ### 工具集
 
@@ -133,7 +133,7 @@ bun-bot "分析这个项目的结构并给出建议"
 │   └── bun-bot.ts      # CLI 分发（P4-6）：复用 src/cli.ts（init / --version / --help），透传 index.ts；bun link 全局安装
 ├── scripts/
 │   ├── build.sh        # 构建编译产物（本地与 CI 共用：先测试后编译 + SHA256 校验文件）
-│   ├── install.sh      # 用户安装脚本（macOS/Linux：检测平台 → 下载 → 校验 → 安装为 bun-bot → PATH 提示）
+│   ├── install.sh      # 用户安装脚本（macOS/Linux：检测平台 → 下载（进度条）→ 校验 → 安装为 bun-bot → PATH 提示）
 │   └── install.ps1     # 用户安装脚本（Windows：下载 .exe → 校验 → 装为 bun-bot.exe → 加用户 PATH）
 ├── src/
 │   ├── tools.ts        # 工具注册表（新增工具在此注册；description 带 example usage；P4-7 readonly/ask 白名单）
@@ -147,7 +147,7 @@ bun-bot "分析这个项目的结构并给出建议"
 │   ├── git.ts          # git 安全快照（write_file + run_bash 写操作前）
 │   └── audit.ts        # 审计日志（落盘 .bunbot/AUDIT.log.jsonl）
 ├── skills/             # 组合操作库（SKILL.md + 实现 + 自测）
-├── tests/              # 86 用例 / 509 expect（M1 + skills + AGENTS.md + P2 + P3 + P4 + P5 全量闸门）
+├── tests/              # 87 用例 / 514 expect（M1 + skills + AGENTS.md + P2 + P3 + P4 + P5 全量闸门）
 ├── .bunbot/            # 状态目录（P4-4：AGENT_STATE / MEMORY / CHECKPOINT / AUDIT，gitignore，本地持久化）
 ├── blog.md             # agent 真实运行实录（自我进化过程）
 └── docs/               # 迭代进度与架构文档（面向自我迭代）
@@ -182,7 +182,7 @@ bash scripts/build.sh
 
 ### 开发约定与测试闸门
 
-- 改完必须跑 `bun test`：**86 用例 / 509 expect**，零外部依赖 —— 任何代码改动后必须全绿（P4 新增 10 个测试文件 + P5 新增 1 个 p5-release）
+- 改完必须跑 `bun test`：**87 用例 / 514 expect**，零外部依赖 —— 任何代码改动后必须全绿（P4 新增 10 个测试文件 + P5 新增 1 个 p5-release）
 - `bun run skills/web-search/self-test.ts --online`：web-search skill 在线实测（改了解析逻辑必须跑）
 - 新增能力必须补测试用例：`tests/` 是自我进化的验证闸门
 - 提交信息用 conventional commits（`feat:` / `fix:` / `docs:` / `refactor:`）

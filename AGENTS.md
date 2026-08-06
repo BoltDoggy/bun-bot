@@ -6,7 +6,7 @@
 > 2026-08 修订：P2-2 任务模式（--self）+ P2-3 上下文预算 + P2-4 checkpoint（--resume）+ P3 质量与防护（git 安全阀补 run_bash / 测试闸门自动回滚 / 沙箱权限分级 / 审计日志）落地后，同步入口 / 可调变量 / 测试数字。
 > 2026-08 再修订：**P4 通用化落地** —— bun-bot 可在任意项目使用：身份/关键文件去专用化（context.ts）、.bunbot.json 项目配置 + ~/.bun-bot/ 全局配置（config.ts）、状态文件移入 .bunbot/（不污染 git）、多生态测试闸门（gate.ts）、CLI bin + init（bin/bun-bot.ts）、readonly/ask 白名单、大项目文件树忽略/截断、交互模式（--interactive）。本文件已同步入口 / 可调变量 / 测试数字。
 > 2026-08 三修订：**旧设计兼容清理** —— memory.ts 移除旧位置（项目根）状态文件兼容读取（loadState / loadCheckpoint 不再 fallback 工作区根）、根目录旧状态文件与 .gitignore 旧条目已删、docs/PLAN.md（P0-P4 全部完成的历史计划）归档删除。本文件已同步测试数字（76 用例 / 447 expect）与 docs 描述。
-> 2026-08 四修订：**P5 全平台分发落地** —— GitHub Actions 矩阵构建（.github/workflows/build.yml，6 平台：linux/darwin/windows × x64/arm64）+ 用户安装脚本（scripts/install.sh / install.ps1，下载 → SHA256 校验 → 安装）+ 本地/CI 共用构建脚本（scripts/build.sh，先测试后编译）。本文件已同步测试数字（86 用例 / 509 expect）、运行与构建、架构决策。
+> 2026-08 四修订：**P5 全平台分发落地** —— GitHub Actions 矩阵构建（.github/workflows/build.yml，6 平台：linux/darwin/windows × x64/arm64）+ 用户安装脚本（scripts/install.sh / install.ps1，下载（进度条）→ SHA256 校验 → 安装）+ 本地/CI 共用构建脚本（scripts/build.sh，先测试后编译）。本文件已同步测试数字（87 用例 / 514 expect）、运行与构建、架构决策。
 
 ## 运行与构建
 
@@ -28,7 +28,7 @@
 
 ## 测试闸门（改完必须跑）
 
-- `bun test`：86 用例 / 509 expect，零外部依赖 —— 任何代码改动后必须全绿（P4 新增 10 个测试文件：p4-context / p4-config / p4-state-dir / p4-gate / p4-cli / p4-readonly / p4-global / p4-filetree / p4-interactive / p4-bootstrap；P5 新增 1 个：p5-release —— release 工作流 + 安装脚本端到端（本地 mock release 服务器，无需网络））
+- `bun test`：87 用例 / 514 expect，零外部依赖 —— 任何代码改动后必须全绿（P4 新增 10 个测试文件：p4-context / p4-config / p4-state-dir / p4-gate / p4-cli / p4-readonly / p4-global / p4-filetree / p4-interactive / p4-bootstrap；P5 新增 1 个：p5-release —— release 工作流 + 安装脚本端到端（本地 mock release 服务器，无需网络））
 - `bun run skills/web-search/self-test.ts --online`：web-search skill 在线实测（改了解析逻辑必须跑）
 - 新增能力必须补测试用例：`tests/` 是自我进化的验证闸门
 
