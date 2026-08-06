@@ -1,38 +1,63 @@
 # 现状分析（as-is）
 
-基于对 index.ts / README.md 的实际阅读与统计，截止当前版本。
+基于对 index.ts / src/ / tests/ 的实际阅读与统计，更新于 **M1（P0+P1）完成之后**。
 
 ## 快照数据
 
 | 项 | 值 |
 | --- | --- |
-| index.ts 行数 | 201 行 / 6.6 KB（单文件，全部逻辑） |
-| 工具数量 | 1 个：`run_script` |
-| 模型 | `deepseek-v4-flash`（可换 `deepseek-v4-pro`） |
-| 最大迭代 | 150 轮 |
-| 脚本超时 | 30 秒 |
-| 工具输出截断 | 4000 字符 |
-| 运行方式 | 每次 CLI 任务独立进程，**无状态** |
+| index.ts | 163 行 / 5.6 KB（入口：CLI 解析 + agent 主循环，保持轻量） |
+| src/ | tools.ts 336 行 / 12.8 KB · context.ts 75 行 / 3.7 KB · memory.ts 180 行 / 5.5 KB · git.ts 42 行 / 1.4 KB |
+| 工具数量 | 5 个：`run_script` / `read_file` / `write_file` / `list_dir` / `run_bash` |
+| 模型 | `deepseek-v4-flash`（`BUN_BOT_MODEL` 可换，如 `deepseek-v4-pro`） |
+| 最大迭代 | 150 轮（`BUN_BOT_MAX_ITERATIONS` 可调） |
+| 脚本超时 | 默认 30s（`DEFAULT_TIMEOUT_MS`），`timeoutMs` 可放开长任务 |
+| 工具输出上限 | 65536 字符（4K → 64KB），截断处带偏移信息可续读 |
+| read_file 硬上限 | 1MB（`MAX_READ_BYTES`） |
+| 记忆 | `AGENT_STATE.json` / `MEMORY.md` 跨会话持久化 |
+| 自修改安全 | `write_file` 落盘前自动 git 快照 + 返回行级 diff 摘要 |
+| 自测 | 12 用例 / 39 expect，零外部依赖（`bun test`） |
 
 ## 模块解剖
 
 ```text
-index.ts
-├── 配置区        BASE_URL / MODEL / MAX_ITERATIONS / API_KEY
-├── CLI 解析      支持 --stream 标志
-├── 类型          ToolCall / ChatMessage
-├── 工具定义      唯一工具 run_script（写入 tmpdir 后 bun run）
-├── runScript()   写临时文件 → spawn → 30s 超时 → 输出截 4000 字符 → 删除
-├── chatCompletion()  非流式 / SSE 流式两条路径
-└── agent 循环    messages 累积 → 有 tool_calls 就执行并回填 → 直到无工具调用
+index.ts              入口：CLI 解析（--stream）+ agent 主循环 + 记忆读写钩子
+src/tools.ts          工具注册表：5 个工具的定义与执行器（新增工具在此注册）
+src/context.ts        系统提示词组装：[身份] [能力] [项目] [记忆] [规则] 五区块
+src/memory.ts         记忆读写：AGENT_STATE.json / MEMORY.md + 项目上下文加载
+src/git.ts            自修改前的 git 快照（M1 简化版，完整安全阀属 P3）
+tests/tools.test.ts   self-test 用例（agent 修改自身代码后的验证闸门）
 ```
 
-## 与 1M 上下文时代的差距
+## 工具集（5 个）
 
-1. **不认识自己**：system prompt 极简，不加载 README / 项目结构 / 架构说明。
-2. **无记忆**：`MEMORY` / 状态文件不存在，每次运行从零开始。
-3. **改不了自己**：`run_script` 只能写 tmpdir 临时文件，无法读写工作区源码。
-4. **输出被截断**：4000 字符上限是为小上下文时代设计的，现在反而浪费能力。
-5. **长任务无支撑**：没有进度 checkpoint、没有上下文预算管理，>100 轮容易迷失。
+| 工具 | 说明 |
+| --- | --- |
+| `run_script` | Bun 运行 JS/TS，默认沙箱 tmpdir，可指定 cwd 到工作区；`timeoutMs` 可配；输出 64KB 带偏移 |
+| `read_file` | 读工作区文件，默认完整返回 64KB，可 offset 续读（单次硬上限 1MB） |
+| `write_file` | 写工作区文件，自动 git 快照 + 返回行级 diff 摘要（改自己代码就靠它） |
+| `list_dir` | 列目录（`-a` 显示隐藏文件、`depth` 限制递归深度） |
+| `run_bash` | shell 命令，cwd 默认工作区，可跑 git / bun test 等 |
 
-> 本目录的 [PLAN.md](./PLAN.md) 针对以上五点给出分阶段迭代方案。
+## agent 主循环（index.ts）
+
+1. 加载记忆（`loadState`）；首次运行初始化 `AGENT_STATE.json` / `MEMORY.md`
+2. 加载项目上下文（`loadProjectContext`）→ README + docs + 文件树 + 记忆
+3. 组装系统提示词（`buildSystemPrompt`）→ 五区块，预算 <5%
+4. 循环：`chatCompletion` → 有 `tool_calls` 就 `executeTool` 并回填 → 直到无工具调用
+5. 任务完成 → 写回 `lastTask` / `lastSummary` / `lastRunAt` → 退出
+
+## 已解决的旧差距（M1 完成）
+
+1. ~~不认识自己~~ → 系统提示词五区块，启动加载 README + docs 索引 + 记忆
+2. ~~无记忆~~ → `AGENT_STATE.json` / `MEMORY.md` 持久化，重启可引用上次决策
+3. ~~改不了自己~~ → 读写工作区的四工具 + git 快照，形成"读 → 改 → 测"闭环
+4. ~~输出被截断~~ → 4000 → 65536 字符，截断带偏移可续读
+
+## 仍存在的差距（M2 / M3）
+
+5. **长任务无支撑**：没有进度 checkpoint、没有 `--resume` 续跑、没有上下文预算管理（`budget.ts` 未实现），>100 轮容易迷失。
+6. **回滚靠手动**：git 快照已自动打，但测试闸门、自动 revert、审计日志属 P3，尚未落地。
+7. **`--self` 模式未实现**：还不能"只出 diff 预览 → 确认后应用"，自迭代仍需人在场确认。
+
+> 迭代计划见 [PLAN.md](./PLAN.md)。
