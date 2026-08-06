@@ -1,16 +1,38 @@
 # bun-bot 自我迭代计划：拥抱 1M 上下文
 
+> 理论地基：`learn/`（结构化笔记 `learn/README.md` + 5 篇权威一手原文 `learn/raw/`）——提示词工程 × 上下文工程 × Harness 工程。
+> 本计划的差距分析、优先级与验收口径均来自那里的学习成果；计划修订时先回 `learn/` 校准。
+> 更新时间：2026-08 · 对齐 M1 + skills + learn 后的现状。
+
 ## 0. 为什么现在迭代
 
-当前 bun-bot 是 201 行单文件 agent，其设计隐含了大量"省上下文"的旧约束。模型已支持 1M 上下文，这些约束要么是浪费，要么会反噬：
+bun-bot 已完成 M1（P0+P1）与 skills 能力：`index.ts`（163 行入口）+ `src/` 五模块 + `skills/` + `tests/`，自修改最小闭环成立。继续迭代的方向由 learn/ 三大主题校准：
 
-| 旧约束（为了省 token） | 1M 时代的问题 |
+| 工程 | 回答的问题 | 对本体的意义 |
+| --- | --- | --- |
+| **提示词工程** | 指令怎么写？ | 系统提示词 right altitude、分节、few-shot 精选（`learn/README.md` §1） |
+| **上下文工程** | 每次推理喂什么？ | JIT 检索 / 渐进披露 / 长任务三件套（compaction、结构化笔记、子 agent）（§2） |
+| **Harness 工程** | agent 怎么跑？ | ACI 工具设计五原则、Claude Code 实践清单（permissions/hooks/checkpoint/resume）（§3） |
+
+M1 已解决的旧约束（当时为了省 token）：
+
+| 旧约束 | 1M 时代的问题 | 现状 |
+| --- | --- | --- |
+| system prompt 极简，不认自己 | 没有项目意识，说不出自己是什么 | ✅ 五区块提示词（身份/能力/项目/记忆/规则） |
+| 工具输出截 4000 字符 | 推理被截断的信息误导 | ✅ 65536 + 偏移续读 |
+| 无记忆，每次运行从零开始 | 无法积累决策 | ✅ `AGENT_STATE.json` / `MEMORY.md` |
+| 只能写 tmpdir，改不了工作区 | 永远"分析"而不"动手" | ✅ 五工具读写工作区 |
+| 150 轮上限、30s 固定超时 | 长任务没有节奏感 | ✅ 均可配置 |
+
+learn/ 校准后的**新差距（差距即路线图，详见 `learn/README.md` §4）**：
+
+| learn/ 指出的差距 | 对应计划 |
 | --- | --- |
-| system prompt 极简，不认自己 | 没有项目意识，说不出自己是什么、有哪些能力 |
-| 工具输出截 4000 字符 | 完整的文件、日志、diff 传不回来，推理被截断的信息误导 |
-| 无记忆，每次运行从零开始 | 长任务反复从头解释，无法积累决策 |
-| 只能写 tmpdir，改不了工作区 | 读得到结果却落不了地，永远"分析"而不"动手" |
-| 150 轮上限、30s 固定超时 | 长任务没有节奏感，写死导致要么跑飞要么不够用 |
+| 工具描述无 example usage（工具设计五原则之五：prompt-engineering 工具描述） | **P2 第 1 项**（成本最低、收益最直接） |
+| 无 token 预算 / 无 compaction（context rot：token 越多回忆越差） | **P2 budget.ts + tool result clearing**（从最轻档压缩做起） |
+| 无 `--resume` / checkpoint（Claude Code 实践清单） | **P2 checkpoint** |
+| 无测试闸门自动 revert（verify its work） | **P3 测试闸门** |
+| 无权限分级 / hooks（Claude Code 清单） | **P3 沙箱扩展** |
 
 **一句话：让 bun-bot 从"会算数的脚本执行器"迭代成"能读懂自己、修改自己、记住自己"的长期 agent。**
 
@@ -33,9 +55,11 @@ src/budget.ts         上下文 token 预算与超限摘要  ← P2 待建
 src/git.ts            自修改前的安全提交与回滚
 skills/               组合操作库：skills/<name>/SKILL.md + 实现 + 样本 + 自测
 tests/                self-test 用例（agent 修改自身代码后的验证闸门）
+learn/                理论地基：5 篇权威一手材料 + 结构化笔记（只读，按需 read_file，不预载）
 ```
 
-> 当前已落地：index.ts / tools.ts / context.ts / memory.ts / git.ts / skills/ / tests/（见 [ARCHITECTURE.md](./ARCHITECTURE.md) 快照）。
+> 当前已落地：index.ts / tools.ts / context.ts / memory.ts / git.ts / skills/ / tests/ / learn/（见 [ARCHITECTURE.md](./ARCHITECTURE.md) 快照）。
+> 架构的理论依据：`learn/raw/anthropic-effective-context-engineering.md`（上下文工程，budget.ts 的来由）+ `anthropic-writing-tools-for-agents.md`（工具五原则，ACI 化的来由）。
 
 ## 3. 分阶段计划
 
@@ -83,22 +107,22 @@ tests/                self-test 用例（agent 修改自身代码后的验证闸
 
 ### P2 · 长任务与自迭代循环 ⏳（M2 进行中）
 
-**目标**：一次会话能自主完成多步骤的自我迭代。
+**目标**：一次会话能自主完成多步骤的自我迭代；长任务不丢上下文、不爆预算。对齐 `learn/README.md` §4 的"三条最值得立刻做的"。
 
-- [ ] 任务模式：agent 首轮产出 plan，逐项勾选，进度写回 `AGENT_STATE.json`
-- [ ] `--self` 模式：读自己 → 分析痛点 → 提案（不改代码，只输出 diff 预览）→ 确认后应用 → 跑测试 → 总结
-- [ ] 上下文预算：`budget.ts` 做 token 计数，接近上限时把早期消息压缩成摘要（1M 也非无限）
-- [ ] 长任务 checkpoint：`--resume` 从上次断点续跑
+- [ ] **工具描述 ACI 化**：5 个工具的 `description` 补 example usage（如 `run_script` 给出"计算斐波那契"的调用示例），把工具描述当 prompt 打磨（工具设计五原则之五；**成本最低、收益最直接，先做**）
+- [ ] 任务模式：agent 首轮产出 plan，逐项勾选，进度写回 `AGENT_STATE.json`（= learn 的结构化笔记 / agentic memory，跨上下文重置续跑不丢目标）
+- [ ] 上下文预算：`budget.ts` 做 token 计数，接近上限时压缩早期消息——**从最轻档 tool result clearing 做起**（工具结果用过即清，先保 recall 再迭代 precision；1M 也非无限，context rot 真实存在）
+- [ ] 长任务 checkpoint：`--resume` 从上次断点续跑（会话本地持久化，跨坐续跑）
 
-**验收**：`bun run index.ts --self "给我加一个 read_file 工具并补文档"` 全流程无人干预完成。
+**验收**：`bun run index.ts --self "给我加一个 read_file 工具并补文档"` 全流程无人干预完成；模拟 100 轮长任务不丢上下文、不爆预算。
 
 ### P3 · 质量与防护 ⏳（M3 进行中）
 
 **目标**：让自修改可信、可回滚、不跑飞。
 
 - [ ] git 安全阀：任何 `write_file` / `run_bash` 触及工作区前，`git add -A && git commit` 打快照（注：`write_file` 已自动打快照，`run_bash` 尚未）
-- [ ] 测试闸门：每次自修改后强制跑 `tests/`，失败自动 `git revert`
-- [ ] 沙箱：脚本默认限制 `cwd`，可选资源上限（内存/进程数）
+- [ ] 测试闸门：每次自修改后强制跑 `tests/`，失败自动 `git revert`（= learn 的 verify its work：给 agent 能跑出 pass/fail 的验证信号）
+- [ ] 沙箱：脚本默认限制 `cwd`，可选资源上限（内存/进程数）；**权限分级**（Claude Code permissions 模式：全自动区 + 需确认区，不每步都问）
 - [ ] 审计日志：每次工具调用的入参/出参摘要落盘
 
 **验收**：故意让 `--self` 写一个坏补丁，能自动回滚且项目可继续跑。
@@ -114,7 +138,7 @@ tests/                self-test 用例（agent 修改自身代码后的验证闸
 [规则]  改工作区前必须 git 快照；改完必须跑 tests/；工具输出默认完整读取
 ```
 
-> ✅ 已按此结构落地于 `src/context.ts`（skills 索引由 `skillsIndex()` 从 `skills/README.md` 提取）。
+> ✅ 已按此结构落地于 `src/context.ts`（skills 索引由 `skillsIndex()` 从 `skills/README.md` 提取）。right altitude 原则见 `learn/README.md` §1.3。
 
 ## 5. 记忆格式（草案）
 
@@ -137,27 +161,30 @@ tests/                self-test 用例（agent 修改自身代码后的验证闸
 ## 6. 成功指标
 
 1. `bun run index.ts --self` 能安全修改自身代码、跑测试、通过或自动回滚。⏳（P3 完成）
-2. 一次会话完成"新增工具 + 文档 + 测试 + 收尾"全流程，无需人工干预。✅（M1 已达成：工具集 + 文档 + 测试 + README 一次闭环）
+2. 一次会话完成"新增工具 + 文档 + 测试 + 收尾"全流程，无需人工干预。✅（M1 已达成）
 3. 重启后能引用上次会话的决策（记忆持久化生效）。✅
-4. 超过 100 轮工具调用的长任务不丢上下文、不爆预算。⏳（P2 的 budget.ts / checkpoint）
+4. 超过 100 轮工具调用的长任务不丢上下文、不爆预算（budget.ts + tool result clearing + checkpoint 生效）。⏳（P2）
 5. 跨会话能力不再只靠 lastSummary：修正过的操作能固化成带自测的 skill。✅（web-search v2 已落地）
+6. 工具描述 ACI 化：5 个工具 description 均带 example usage。⏳（P2 第 1 项）
 
 ## 7. 风险与对策
 
 | 风险 | 对策 |
 | --- | --- |
-| 1M 也会被长会话填满 | `budget.ts` 摘要压缩，`--resume` 分段续跑 |
+| 1M 也会被填满 + context rot（token 越多模型回忆越差） | `budget.ts` 摘要压缩 + **tool result clearing** + `--resume` 分段续跑 |
 | 自修改破坏源码 | git 快照 + 测试闸门 + 自动 revert |
-| 全量塞文件反而稀释注意力 | 按需 `read_file`，不全量灌入提示词（skills 索引同理：提示词只放一层索引） |
-| 工具权限过大 | 沙箱 `cwd` 限制 + 资源上限 + 审计日志 |
+| 全量塞文件反而稀释注意力 | 按需 `read_file` + 渐进披露，不全量灌入提示词（skills 索引同理：提示词只放一层索引） |
+| 工具权限过大 | 沙箱 `cwd` 限制 + 资源上限 + 权限分级 + 审计日志 |
 | 固化的知识会过时（HTML 结构变了） | skill 带版本号 + 自测命令（离线样本兜底 + `--online` 实测），纳入测试闸门 |
+| 计划本身偏离理论（凭感觉迭代） | learn/ 作为理论地基随迭代修订，差距先回笔记 §4 校准 |
 
 ## 8. 里程碑
 
+- ✅ **learn 理论地基**：5 篇权威一手材料（Anthropic 工程博客 ×3 + OpenAI 官方指南 + Claude Code best practices）→ 结构化笔记 `learn/README.md`，"差距即路线图"（2026-08 完成）。
 - ✅ **M1**（P0+P1）：agent 认识自己、能改自己的文件 —— 自修改最小闭环成立（2026-08 完成）。
 - ✅ **skills**：组合操作库落地，web-search v2 固化跨会话能力（2026-08 完成）。
-- ⏳ **M2**（P2）：`--self` 能自主完成多步自我迭代任务，带 checkpoint 与续跑。
-- ⏳ **M3**（P3）：加固、回滚、测试，形成可信的自修改循环，可长期自动演进。
+- ⏳ **M2**（P2）：`--self` 自主迭代 + 工具描述 ACI 化 + budget.ts / tool result clearing / checkpoint。
+- ⏳ **M3**（P3）：加固、回滚、测试闸门，形成可信的自修改循环，可长期自动演进。
 
 ---
 
