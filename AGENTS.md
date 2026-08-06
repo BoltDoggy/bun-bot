@@ -3,24 +3,25 @@
 > `/init` 生成于 2026-08-06：分析代码库（构建 / 测试 / 代码模式）后固化的项目级指令。
 > bun-bot 每次启动自动加载本文件，优先级最高（系统提示词 [规则] 第 5 条已声明）。
 > 改动本文件涉及行为变更时，同步更新 README / docs / tests 并跑 `bun test`。
+> 2026-08 修订：P2-2 任务模式（--self）+ P2-3 上下文预算落地后，同步入口 / 可调变量 / 测试数字。
 
 ## 运行与构建
 
 - 必填环境变量：`DEEPSEEK_API_KEY`（写入 `.env`，已 gitignore）
-- 入口：`bun run index.ts [--stream] "任务"`；`--stream` 走 SSE 流式输出
-- 可调变量：`BUN_BOT_MODEL`（默认 `deepseek-v4-flash`）、`BUN_BOT_MAX_ITERATIONS`（默认 150）、`BUN_BOT_WORKSPACE`（工作区根，测试沙箱用它覆盖）
+- 入口：`bun run index.ts [--stream] [--self] "任务"`；`--stream` 走 SSE 流式输出，`--self` 开任务模式（先 plan 后执行、逐项勾选、中断可续跑）
+- 可调变量：`BUN_BOT_MODEL`（默认 `deepseek-v4-flash`）、`BUN_BOT_MAX_ITERATIONS`（默认 150）、`BUN_BOT_WORKSPACE`（工作区根，测试沙箱用它覆盖）、`BUN_BOT_CONTEXT_BUDGET`（上下文 token 预算，默认 120000，P2-3 超限压缩早期工具结果）
 - 依赖极简（仅 `bun-types` devDep）；加新依赖前先确认是否必要，装完提交 `bun.lock`
 
 ## 测试闸门（改完必须跑）
 
-- `bun test`：17 用例 / 67 expect，零外部依赖 —— 任何代码改动后必须全绿
+- `bun test`：28 用例 / 155 expect，零外部依赖 —— 任何代码改动后必须全绿
 - `bun run skills/web-search/self-test.ts --online`：web-search skill 在线实测（改了解析逻辑必须跑）
 - 新增能力必须补测试用例：`tests/` 是自我进化的验证闸门
 
 ## 代码约定
 
 - 注释、文档、回复用**中文**；代码风格与现有保持一致（双引号 + 分号）
-- 系统提示词五区块：[身份] [能力] [项目] [记忆] [规则]，新内容按区块归位（`src/context.ts`）
+- 系统提示词五区块：[身份] [能力] [项目] [记忆] [规则]（--self 时注入 [任务模式]），新内容按区块归位（`src/context.ts`）
 - 新增工具：在 `src/tools.ts` 的 `registry` 数组注册 `{ def, run }`，同步 README 工具表
 - skills 约定：**不加新工具**；`skills/<name>/SKILL.md` 必须带 `version` + 自测命令；索引表维护在 `skills/README.md` 的 `## 索引`
 - 提交信息用 conventional commits（`feat:` / `fix:` / `docs:` / `refactor:`）；`write_file` 的自动快照提交（`bun-bot 快照（修改前）: ...`）无需手动处理
@@ -39,3 +40,4 @@
 - 工具输出上限 64KB，截断带偏移可续读；大文件用 `read_file` 的 `offset` 续读，别假设被截断
 - 长任务（测试 / 安装 / 搜索）给 `timeoutMs` 更大值（如 120000），默认 30s 易超时
 - `Bun.spawn` 的 stdout / stderr 都要消费，否则子进程可能挂起
+- 上下文预算压缩的是**最早的 tool 结果**（消息结构不动、tool_call_id 关联保留、system 永不清理），被清的工具结果如需细节要重新调用工具
