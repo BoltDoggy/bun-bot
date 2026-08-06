@@ -64,7 +64,7 @@ function outsideError(kind: string, p: string): string {
 
 // P3-3：run_bash 危险命令黑名单 —— 命中直接拒绝（保守优先：宁可拒绝可用，不可放过危险）
 const DANGEROUS_PATTERNS: RegExp[] = [
-  /(^|[\s|;&])rm\s+(-[^\s]*r[^\s]*)?\s+(\/|~|\.)(\s|$)/, // rm -rf /、~、.（当前目录）
+  /(^|[\s|;&])rm\s+(-[^\s]*)?\s+(\/|~|\.)/,               // rm -rf /、~、.（含 / 开头绝对路径 / ~ / . 前缀）
   /(^|[\s|;&])git\s+push(\s|$)/,                          // 推远程
   /(^|[\s|;&])git\s+reset\s+--hard/,                      // 丢改动（测试闸门内部自己用）
   /(^|[\s|;&])sudo(\s|$)/,
