@@ -3,7 +3,8 @@
  *
  * 验证：
  *   1. .github/workflows/build.yml 存在：矩阵覆盖 6 平台（linux/darwin/windows × x64/arm64）、
- *      tag `v*` 触发 Release 发布、setup-bun + build.sh + artifact + gh-release 步骤齐全
+ *      tag `v*` 触发 Release 发布、setup-bun + build.sh + artifact + gh-release 步骤齐全、
+ *      发布为独立 release job（needs: build，下载合并后统一发布一次，避免并发 create 竞态）
  *   2. scripts/build.sh：产物命名（windows 带 .exe）、target 白名单、SHA256 生成、先测后编译
  *   3. scripts/install.sh：--help 用法、自动检测当前平台、--target 覆盖、
  *      端到端安装（本地 mock release 服务器：下载 → SHA256 校验 → 安装 → 可执行位）、
@@ -105,7 +106,7 @@ async function runInstall(args: string[], env: Record<string, string> = {}): Pro
 
 // ---------- 1. workflow ----------
 
-test("build.yml 存在：矩阵覆盖 6 平台 + tag 触发 + Release 发布", () => {
+test("build.yml 存在：矩阵覆盖 6 平台 + tag 触发 + Release 发布（独立 release job）", () => {
   const yml = readFileSync(join(ROOT, ".github", "workflows", "build.yml"), "utf8");
   for (const t of ["linux-x64", "linux-arm64", "darwin-x64", "darwin-arm64", "windows-x64", "windows-arm64"]) {
     expect(yml).toContain("target: " + t);
@@ -114,15 +115,24 @@ test("build.yml 存在：矩阵覆盖 6 平台 + tag 触发 + Release 发布", (
   expect(yml).toContain('tags:');
   expect(yml).toContain('"v*"');
   expect(yml).toContain("workflow_dispatch");
-  // 步骤：setup-bun → build.sh → upload-artifact → gh-release
+  // build job 步骤：setup-bun → build.sh → upload-artifact
   expect(yml).toContain("oven-sh/setup-bun");
   expect(yml).toContain("scripts/build.sh");
   expect(yml).toContain("actions/upload-artifact");
-  expect(yml).toContain("softprops/action-gh-release");
-  // 发布仅限 tag 触发（手动构建不上 Release）
-  expect(yml).toContain("refs/tags/");
   // 产物上传 dist/*
   expect(yml).toContain("path: dist/*");
+  // 发布必须是独立 release job（needs: build）—— 6 个 matrix job 并发 create
+  // 同一 tag 的 Release 会 422 竞态（v0.4.0 实测 darwin-arm64 / linux-arm64 撞车、
+  // Release 缺 2 平台资产），必须等全部构建完下载合并后统一发布一次
+  expect(yml).toContain("needs: build");
+  expect(yml).toContain("actions/download-artifact");
+  expect(yml).toContain("merge-multiple: true");
+  const ghIdx = yml.indexOf("softprops/action-gh-release");
+  expect(ghIdx).toBeGreaterThan(-1);
+  // gh-release 必须在下载合并之后（在独立 release job 里，不在 matrix build job 中）
+  expect(yml.slice(0, ghIdx)).toContain("actions/download-artifact");
+  // 发布仅限 tag 触发（手动构建不上 Release）
+  expect(yml).toContain("refs/tags/");
 });
 
 // ---------- 2. build.sh ----------
