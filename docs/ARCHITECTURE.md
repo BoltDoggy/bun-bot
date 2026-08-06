@@ -8,7 +8,7 @@
 | --- | --- |
 | index.ts | 339 行 / 15.9 KB（入口：CLI 命令拦截（init / --version / --help，API key 检查前）+ CLI 解析（--stream / --self / --resume / --interactive）+ runAgentLoop 主循环 + 记忆读写钩子 + P2-3 预算检查 + P2-4 checkpoint + P3-2 测试闸门收尾 + P3-4 审计日志钩子 + P4-10 交互模式 REPL） |
 | src/ | tools.ts 547 行 / 26 KB · memory.ts 447 行 / 13.3 KB（含 checkpoint + P4-4/9）· context.ts 189 行 / 11.7 KB（P4-2）· config.ts 137 行 / 5.8 KB（P4-3/8）· gate.ts 190 行 / 8.4 KB（P4-5）· budget.ts 103 行 / 3.9 KB · git.ts 69 行 / 2.7 KB · audit.ts 76 行 / 2.6 KB（P4-4）· interactive.ts 55 行 / 2.3 KB（P4-10）· cli.ts 80 行 / 4.1 KB（P4-6 CLI：init / --version / --help）· bin/bun-bot.ts 33 行 / 1.3 KB（复用 cli.ts，bun link 分发） |
-| release（P5） | `.github/workflows/build.yml`（81 行：矩阵 6 平台 + tag 发布 + 手动 artifact）· scripts/build.sh（59 行：本地/CI 共用构建）· scripts/install.sh（145 行：POSIX 安装脚本）· scripts/install.ps1（73 行：Windows 安装脚本） |
+| release（P5） | `.github/workflows/build.yml`（98 行：矩阵 6 平台构建 + 独立 release job 统一发布 + 手动 artifact）· scripts/build.sh（59 行：本地/CI 共用构建）· scripts/install.sh（145 行：POSIX 安装脚本）· scripts/install.ps1（73 行：Windows 安装脚本） |
 | 工具数量 | 6 个：`run_script` / `read_file` / `write_file` / `list_dir` / `run_bash` / `update_plan`（skills 不加新工具） |
 | 工具描述 ACI 化 | ✅ P2-1 已完成：6 个工具 `description` 均带「示例：」JSON 参数形态的 example usage，参数语义同步打磨；系统提示词 [能力] 区块带极简 few-shot（双保险） |
 | 任务模式 | ✅ P2-2 已完成：`--self` 注入 [任务模式] 区块（先 plan 后执行、逐项勾选、未完成计划续跑提示）；`update_plan` 工具全量覆盖式创建/勾选计划；`AgentState.activePlan` 持久化 + MEMORY.md「当前任务计划」区块；主循环结束重载 state 防覆盖 |
