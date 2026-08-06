@@ -7,7 +7,7 @@
 | 项 | 值 |
 | --- | --- |
 | index.ts | 302 行 / 14.5 KB（入口：CLI 解析（--stream / --self / --resume / --interactive）+ runAgentLoop 主循环 + 记忆读写钩子 + P2-3 预算检查 + P2-4 checkpoint + P3-2 测试闸门收尾 + P3-4 审计日志钩子 + P4-10 交互模式 REPL） |
-| src/ | tools.ts 546 行 / 26 KB · memory.ts 451 行 / 17.5 KB（含 checkpoint + P4-4/9）· context.ts 189 行 / 11.7 KB（P4-2）· config.ts 137 行 / 5.8 KB（P4-3/8）· gate.ts 190 行 / 8.4 KB（P4-5）· budget.ts 103 行 / 3.9 KB · git.ts 69 行 / 2.7 KB · audit.ts 76 行 / 2.6 KB（P4-4）· interactive.ts 55 行 / 2.3 KB（P4-10）· bin/bun-bot.ts 114 行（P4-6 CLI） |
+| src/ | tools.ts 546 行 / 26 KB · memory.ts 447 行 / 13.3 KB（含 checkpoint + P4-4/9）· context.ts 189 行 / 11.7 KB（P4-2）· config.ts 137 行 / 5.8 KB（P4-3/8）· gate.ts 190 行 / 8.4 KB（P4-5）· budget.ts 103 行 / 3.9 KB · git.ts 69 行 / 2.7 KB · audit.ts 76 行 / 2.6 KB（P4-4）· interactive.ts 55 行 / 2.3 KB（P4-10）· bin/bun-bot.ts 114 行（P4-6 CLI） |
 | 工具数量 | 6 个：`run_script` / `read_file` / `write_file` / `list_dir` / `run_bash` / `update_plan`（skills 不加新工具） |
 | 工具描述 ACI 化 | ✅ P2-1 已完成：6 个工具 `description` 均带「示例：」JSON 参数形态的 example usage，参数语义同步打磨；系统提示词 [能力] 区块带极简 few-shot（双保险） |
 | 任务模式 | ✅ P2-2 已完成：`--self` 注入 [任务模式] 区块（先 plan 后执行、逐项勾选、未完成计划续跑提示）；`update_plan` 工具全量覆盖式创建/勾选计划；`AgentState.activePlan` 持久化 + MEMORY.md「当前任务计划」区块；主循环结束重载 state 防覆盖 |
@@ -21,12 +21,12 @@
 | 上下文预算 | 默认 120000 tokens（`BUN_BOT_CONTEXT_BUDGET` 可调），超限触发 tool result clearing |
 | 工具输出上限 | 65536 字符（4K → 64KB），截断处带偏移信息可续读 |
 | read_file 硬上限 | 1MB（`MAX_READ_BYTES`） |
-| 记忆 | `.bunbot/AGENT_STATE.json` / `.bunbot/MEMORY.md` 本地跨会话持久化（P4-4：状态目录默认 .bunbot/，gitignore 自动追加，不污染用户仓库）；含 `activePlan` + `contextWarnings`；`.bunbot/AGENT_CHECKPOINT.json` 会话级消息历史（任务完成即清除）；旧位置（项目根）兼容读取不自动删除 |
+| 记忆 | `.bunbot/AGENT_STATE.json` / `.bunbot/MEMORY.md` 本地跨会话持久化（P4-4：状态目录默认 .bunbot/，gitignore 自动追加，不污染用户仓库）；含 `activePlan` + `contextWarnings`；`.bunbot/AGENT_CHECKPOINT.json` 会话级消息历史（任务完成即清除） |
 | 自修改安全 | `write_file` 落盘前自动 git 快照 + 返回行级 diff 摘要；P3-1：`run_bash` 写操作命令前若工作区有未提交改动也自动快照（`snapshotIfDirty`） |
 | 测试闸门 | ✅ P3-2 已完成：`src/gate.ts`（`runTestGate` / `revertToHead` / `enforceTestGate`）；主循环收尾若本会话发生过自修改（write_file / 写操作 run_bash 的 `gitSnapshot`）自动跑 `bun test`，失败自动回滚到**会话开始前 HEAD**（`git reset --hard` + `git clean -fd`，gitignore 本地状态不丢）并复测确认项目可继续跑 |
 | 沙箱权限分级 | ✅ P3-3 已完成：路径（cwd / path）默认限制工作区内（`BUN_BOT_ALLOW_OUTSIDE_CWD=1` 放行）；`run_bash` 危险命令黑名单（rm -rf /、git push、fork bomb、sudo、设备写入等）直接拒绝；`BUN_BOT_PERMISSIONS=ask` 时写操作命令需确认 |
 | 审计日志 | ✅ P3-4 已完成：`src/audit.ts` —— 每次工具调用入参/出参摘要落盘 `AUDIT.log.jsonl`（gitignore），`appendAudit` 内部防御性截断（400 / 500），`loadAudit` 最新在前 |
-| 自测 | 74 用例 / 441 expect，零外部依赖（`bun test`）；web-search 另有 `self-test.ts --online` 在线实测 |
+| 自测 | 73 用例 / 438 expect，零外部依赖（`bun test`）；web-search 另有 `self-test.ts --online` 在线实测 |
 
 ## 模块解剖
 
@@ -43,7 +43,7 @@ src/interactive.ts     交互模式（P4-10）：driveInteractive / isExitInput 
 src/audit.ts           审计日志（P3-4）：appendAudit / loadAudit —— 落盘 .bunbot/AUDIT.log.jsonl
 bin/bun-bot.ts         CLI 分发（P4-6）：init / --version / --help / 透传 index.ts（bun link 全局安装）
 skills/               组合操作库：skills/<name>/SKILL.md + 实现 + 离线样本 + 自测
-tests/                self-test 用例 74 / 441 expect（tools + memory + checkpoint + skills + AGENTS.md + P2/P3/P4 各闸门，零外部依赖）
+tests/                self-test 用例 73 / 438 expect（tools + memory + checkpoint + skills + AGENTS.md + P2/P3/P4 各闸门，零外部依赖）
 ```
 
 ## 工具集（6 个，description 均带 example usage）
@@ -140,4 +140,4 @@ tests/                self-test 用例 74 / 441 expect（tools + memory + checkp
 | P3-3 沙箱权限分级 | 路径限制工作区内（cwd / path 越界拒绝）；危险命令黑名单（rm -rf /、git push、fork bomb、sudo、chmod -R、设备写入、下载即执行）；`BUN_BOT_PERMISSIONS=ask` 写操作需确认；`BUN_BOT_ALLOW_OUTSIDE_CWD=1` 放行越界 |
 | P3-4 审计日志 | `src/audit.ts`：每次工具调用入参/出参摘要落盘 `AUDIT.log.jsonl`（gitignore），`appendAudit` 防御性截断（400/500），`loadAudit` 最新在前；主循环 executeTool 后调用 |
 
-> 迭代计划见 [PLAN.md](./PLAN.md)。
+> 里程碑进度与迭代索引见 [docs/README.md](./README.md)。
