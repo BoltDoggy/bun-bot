@@ -1,5 +1,5 @@
 /**
- * tools.ts — 工具定义与执行器（注册表模式，P1 + P2-2 任务模式）
+ * tools.ts — 工具定义与执行器（注册表模式，P1 + P2-2 任务模式 + P3-1/3-3 安全）
  *
  * 工具清单：
  *   run_script  用 Bun 运行 JS/TS（cwd 可指定工作区，默认 tmpdir；超时可配；输出上限 64KB）
@@ -11,6 +11,11 @@
  *
  * P2-1 ACI 化：所有工具的 description 均带 example usage（工具设计五原则之五——
  *              描述/spec 会进上下文，能直接引导工具调用行为；示例即 few-shot）。
+ * P3-1 git 安全阀：run_bash 执行"写操作"命令前，若工作区有未提交改动先打快照
+ *              （src/git.ts snapshotIfDirty），shell 直接改文件也可回滚。
+ * P3-3 沙箱权限分级：路径（cwd / path）默认限制在工作区内（BUN_BOT_ALLOW_OUTSIDE_CWD=1
+ *              可放行）；run_bash 危险命令黑名单（rm -rf /、git push、fork bomb 等）直接拒绝；
+ *              BUN_BOT_PERMISSIONS=ask 时写操作命令需白名单（无人值守返回需确认提示）。
  *
  * 新增工具：往 registry 数组里加一个 { def, run } 即可，agent 就能看到并调用它。
  */
@@ -18,7 +23,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSy
 import { tmpdir } from "node:os";
 import { isAbsolute, join, relative, resolve, dirname } from "node:path";
 import { workspace, loadState, saveState, syncMemoryFile } from "./memory";
-import { snapshot } from "./git";
+import { snapshotIfDirty } from "./git";
 
 export const DEFAULT_OUTPUT_LIMIT = 65536; // P1: 4K → 64KB，1M 上下文下完整回传
 export const MAX_READ_BYTES = 1_000_000;   // read_file 单次读取硬上限
@@ -32,8 +37,78 @@ export function clipOutput(s: string, limit = DEFAULT_OUTPUT_LIMIT): string {
     "剩余 " + (s.length - limit) + " 字符可从偏移 " + limit + " 开始读取。";
 }
 
-function resolveInWorkspace(p: string, base = workspace()): string {
-  return isAbsolute(p) ? p : resolve(base, p);
+// ---------- 路径与权限（P3-3 沙箱权限分级） ----------
+
+/** 路径是否在工作区内（相对路径不越界） */
+export function isInsideWorkspace(p: string, base = workspace()): boolean {
+  const rel = relative(base, p);
+  return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
+}
+
+/**
+ * 解析工作区路径（相对/绝对均可）。P3-3：默认限制在工作区内 ——
+ * 越界返回 null（调用方返回权限错误）；BUN_BOT_ALLOW_OUTSIDE_CWD=1 可放行。
+ */
+function resolveInWorkspace(p: string, base = workspace()): string | null {
+  const abs = isAbsolute(p) ? p : resolve(base, p);
+  if (!isInsideWorkspace(abs, base) && process.env.BUN_BOT_ALLOW_OUTSIDE_CWD !== "1") {
+    return null;
+  }
+  return abs;
+}
+
+/** 越界提示（各工具共用） */
+function outsideError(kind: string, p: string): string {
+  return JSON.stringify({ error: kind + " 超出工作区（权限限制）: " + p + "（可用 BUN_BOT_ALLOW_OUTSIDE_CWD=1 放行，但不建议）" });
+}
+
+// P3-3：run_bash 危险命令黑名单 —— 命中直接拒绝（保守优先：宁可拒绝可用，不可放过危险）
+const DANGEROUS_PATTERNS: RegExp[] = [
+  /(^|[\s|;&])rm\s+(-[^\s]*r[^\s]*)?\s+(\/|~|\.)(\s|$)/, // rm -rf /、~、.（当前目录）
+  /(^|[\s|;&])git\s+push(\s|$)/,                          // 推远程
+  /(^|[\s|;&])git\s+reset\s+--hard/,                      // 丢改动（测试闸门内部自己用）
+  /(^|[\s|;&])sudo(\s|$)/,
+  /(^|[\s|;&])su(\s|$)/,
+  /(^|[\s|;&])mkfs(\s|$)/,
+  /(^|[\s|;&])shutdown(\s|$)/,
+  /(^|[\s|;&])reboot(\s|$)/,
+  /(^|[\s|;&])halt(\s|$)/,
+  /(^|[\s|;&])chmod\s+-R/,                                // 递归改权限
+  /(^|[\s|;&])chown\s+-R/,
+  /(^|[\s|;&])dd\s+if=/,                                  // 裸盘写入
+  />\s*\/dev\/(sd|disk|nvm)/,                             // 写设备
+  /:\(\)\s*\{/,                                           // fork bomb
+  /(^|[\s|;&])curl\b[^|]*\|\s*(ba)?sh(\s|$)/,             // 下载即执行
+  /(^|[\s|;&])wget\b[^|]*\|\s*(ba)?sh(\s|$)/,
+];
+
+// P3-1/3-3：写操作关键字（run_bash 前触发快照；ask 模式下命中需白名单）
+const WRITE_HINTS = [
+  "git commit", "git add", "git reset", "git revert", "git checkout", "git merge",
+  "git rebase", "git clean", "git stash", "git cherry-pick", "git apply", "git am",
+  "bun install", "bun add", "bun remove", "bun link", "bun pm",
+  "npm install", "npm i ", "pnpm ", "yarn ",
+  "sed -i", "> ", ">>", "rm ", "mv ", "cp ", "touch ", "mkdir ", "tee ",
+  "echo ", "printf ", "dd ", "chmod ", "chown ", "ln ", "unlink ",
+];
+
+type PermissionMode = "auto" | "ask";
+
+function permissionMode(): PermissionMode {
+  return process.env.BUN_BOT_PERMISSIONS === "ask" ? "ask" : "auto";
+}
+
+/** run_bash 命令合法性检查：黑名单 → 拒绝；ask 模式写操作 → 需确认 */
+function checkCommand(command: string, mode: PermissionMode): { allowed: boolean; reason?: string } {
+  for (const p of DANGEROUS_PATTERNS) {
+    if (p.test(command)) {
+      return { allowed: false, reason: "危险命令被权限系统拒绝（匹配: /" + p.source + "/）" };
+    }
+  }
+  if (mode === "ask" && WRITE_HINTS.some((h) => command.includes(h))) {
+    return { allowed: false, reason: "权限模式 ask（BUN_BOT_PERMISSIONS=ask）：写操作命令需人工确认。请改用 auto 模式放行，或换用 write_file 工具。" };
+  }
+  return { allowed: true };
 }
 
 // ---------- 进程执行辅助 ----------
@@ -76,6 +151,7 @@ async function runRunScript(args: { code?: string; cwd?: string; timeoutMs?: num
   if (!args.code) return JSON.stringify({ error: "缺少 code 参数" });
   const timeout = args.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const cwd = args.cwd ? resolveInWorkspace(args.cwd) : tmpdir();
+  if (args.cwd && cwd === null) return outsideError("cwd", args.cwd);
   const file = join(tmpdir(), "bun-bot-" + Date.now() + "-" + Math.random().toString(36).slice(2) + ".ts");
   await Bun.write(file, args.code);
   try {
@@ -95,6 +171,7 @@ async function runRunScript(args: { code?: string; cwd?: string; timeoutMs?: num
 async function runReadFile(args: { path?: string; offset?: number; maxBytes?: number }): Promise<string> {
   if (!args.path) return JSON.stringify({ error: "缺少 path 参数" });
   const p = resolveInWorkspace(args.path);
+  if (p === null) return outsideError("path", args.path);
   if (!existsSync(p)) return JSON.stringify({ error: "文件不存在: " + args.path });
   const stat = statSync(p);
   if (stat.isDirectory()) return JSON.stringify({ error: args.path + " 是目录，请用 list_dir" });
@@ -146,9 +223,10 @@ export function summarizeDiff(oldText: string, newText: string, maxHunk = 8): st
 async function runWriteFile(args: { path?: string; content?: string }): Promise<string> {
   if (!args.path || args.content === undefined) return JSON.stringify({ error: "缺少 path 或 content 参数" });
   const p = resolveInWorkspace(args.path);
+  if (p === null) return outsideError("path", args.path);
   const old = existsSync(p) ? readFileSync(p, "utf8") : "";
   mkdirSync(dirname(p), { recursive: true });
-  const snap = await snapshot("write_file " + (relative(workspace(), p) || p));
+  const snap = await snapshotIfDirty("write_file " + (relative(workspace(), p) || p)) ?? "（工作区无未提交改动，无需快照）";
   writeFileSync(p, args.content, "utf8");
   return JSON.stringify({
     path: relative(workspace(), p) || p,
@@ -160,6 +238,7 @@ async function runWriteFile(args: { path?: string; content?: string }): Promise<
 
 async function runListDir(args: { path?: string; all?: boolean; depth?: number }): Promise<string> {
   const base = args.path ? resolveInWorkspace(args.path) : workspace();
+  if (args.path && base === null) return outsideError("path", args.path);
   if (!existsSync(base)) return JSON.stringify({ error: "目录不存在: " + (args.path ?? ".") });
   const stat = statSync(base);
   if (!stat.isDirectory()) return JSON.stringify({ error: (args.path ?? ".") + " 不是目录，请用 read_file" });
@@ -195,6 +274,16 @@ async function runRunBash(args: { command?: string; cwd?: string; timeoutMs?: nu
   if (!args.command) return JSON.stringify({ error: "缺少 command 参数" });
   const timeout = args.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const cwd = args.cwd ? resolveInWorkspace(args.cwd) : workspace();
+  if (args.cwd && cwd === null) return outsideError("cwd", args.cwd);
+  // P3-3：危险命令黑名单 / 权限模式检查
+  const perm = checkCommand(args.command, permissionMode());
+  if (!perm.allowed) {
+    return JSON.stringify({ error: perm.reason, command: args.command, cwd });
+  }
+  // P3-1：写操作命令且工作区有未提交改动 → 先打快照（shell 直接改文件也可回滚）
+  const snap = WRITE_HINTS.some((h) => args.command.includes(h))
+    ? await snapshotIfDirty("run_bash " + args.command.slice(0, 60))
+    : null;
   const r = await spawnWithTimeout(["bash", "-c", args.command], { cwd }, timeout);
   return JSON.stringify({
     cwd,
@@ -203,6 +292,7 @@ async function runRunBash(args: { command?: string; cwd?: string; timeoutMs?: nu
     stderr: clipOutput(r.stderr),
     exitCode: r.exitCode,
     timedOut: r.timedOut,
+    gitSnapshot: snap ?? undefined,
   });
 }
 
@@ -371,6 +461,7 @@ const registry: RegisteredTool[] = [
         description:
           "在 shell 中执行命令（bash -c），返回 JSON：{ cwd, command, stdout, stderr, exitCode, timedOut }。" +
           "默认 cwd 是工作区，可指定其他目录。可用于 git、bun install、测试等。输出上限 64KB。" +
+          "写操作命令前自动 git 快照（可回滚）；危险命令（rm -rf /、git push、fork bomb 等）会被权限系统拒绝。" +
           "示例：{\"command\":\"bun test\"}（跑测试闸门）；{\"command\":\"git status --short\"}（看改动）",
         parameters: {
           type: "object",
