@@ -2,6 +2,14 @@
 
 一个自我认知为 **Bun.js** 运行时的 agent —— 通过 DeepSeek 的 Function Calling 获得工具集，自己编写 JavaScript/TypeScript 脚本，由 Bun 实际执行，再观察结果继续推理，直到任务完成。
 
+> 📖 **来自掘金文章《一个超级简单的 coding agent，100 行就可以做任何事》的读者**：那篇文章对应的是 **`v0.1.0`** tag —— 当时的整个 agent 只有 1 个文件（约 200 行 `index.ts`），就是文章描述的「百行精简实现」。
+> 但 bun-bot 会**自我进化**：此后它给自己加上了工具注册表、跨会话记忆、任务模式、测试闸门、全平台分发…… 演变成了你现在看到的完整项目（`index.ts` + `src/` + `tests/` + `scripts/` + `.github/`）。
+> 想复现文章里的「百行版本」，请切到 `v0.1.0`：
+>
+> ```bash
+> git checkout v0.1.0
+> # 或直接在线查看：https://github.com/BoltDoggy/bun-bot/tree/v0.1.0
+> ```
 **M1 里程碑（P0+P1）**：agent 认识自己、能改自己的文件 —— 自修改最小闭环成立。
 **附加能力**：skills 组合操作库 —— 多步、有坑、会过时的操作固化成 SKILL.md，按需加载、自带自测。
 **M2 完成（P2-1 ~ P2-4）**：工具描述 ACI 化 + 任务模式（`--self`）+ 上下文预算（tool result clearing）+ `--resume` checkpoint —— 长任务「不爆预算、不丢上下文、中断可续跑」闭环成立。
