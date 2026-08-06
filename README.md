@@ -10,7 +10,7 @@
 - 🧠 **代码驱动推理**：所有结论都通过真实运行脚本验证，而不是凭空猜测
 - 🔧 **工具注册表**：`src/tools.ts` 用注册表模式管理工具，agent 可以读自己 → 改自己 → 测自己
 - 🧭 **自我认知**：启动时加载 AGENTS.md（如有）+ README + docs + 文件树 + 记忆，系统提示词含「身份 / 能力 / 项目 / 记忆 / 规则」五区块
-- 📜 **AGENTS.md 项目级指令**：项目根目录的 `AGENTS.md`（可选）是用户与 agent 的项目级契约，存在时自动加载进 [项目] 区块最前、优先级最高（高于 README / docs），[规则] 中声明其约束力；类似 CLAUDE.md 的通用约定，方便接入任何支持 AGENTS.md 的 agent 工具链；兼容旧命名 `AGENT.md`（`AGENTS.md` 优先，缺失时回退）
+- 📜 **AGENTS.md 项目级指令**：项目根目录的 `AGENTS.md`（可选）是用户与 agent 的项目级契约，存在时自动加载进 [项目] 区块最前、优先级最高（高于 README / docs），[规则] 中声明其约束力；类似 CLAUDE.md 的通用约定，方便接入任何支持 AGENTS.md 的 agent 工具链
 - 🧩 **skills 组合操作库**：`skills/<name>/SKILL.md` 固化「多步 + 有坑 + 会过时」的操作（如 web-search），系统提示词只放一层索引，细节按需 `read_file` 加载；每个 skill 带版本号 + 自测命令，纳入测试闸门
 - 💾 **跨会话记忆**：`AGENT_STATE.json`（机器态）+ `MEMORY.md`（人类可读版）本地持久化（gitignore，不纳入版本控制），重启后能引用上次决策
 - 🛡️ **自修改安全**：`write_file` 落盘前自动 git 快照 + 返回行级 diff 摘要
