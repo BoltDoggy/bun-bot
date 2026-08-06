@@ -3,12 +3,14 @@
 一个自我认知为 **Bun.js** 运行时的 agent —— 通过 DeepSeek 的 Function Calling 获得工具集，自己编写 JavaScript/TypeScript 脚本，由 Bun 实际执行，再观察结果继续推理，直到任务完成。
 
 **M1 里程碑（P0+P1）**：agent 认识自己、能改自己的文件 —— 自修改最小闭环成立。
+**附加能力**：skills 组合操作库 —— 多步、有坑、会过时的操作固化成 SKILL.md，按需加载、自带自测。
 
 ## 特性
 
 - 🧠 **代码驱动推理**：所有结论都通过真实运行脚本验证，而不是凭空猜测
 - 🔧 **工具注册表**：`src/tools.ts` 用注册表模式管理工具，agent 可以读自己 → 改自己 → 测自己
 - 🧭 **自我认知**：启动时加载 README + docs + 文件树 + 记忆，系统提示词含「身份 / 能力 / 项目 / 记忆 / 规则」五区块
+- 🧩 **skills 组合操作库**：`skills/<name>/SKILL.md` 固化「多步 + 有坑 + 会过时」的操作（如 web-search），系统提示词只放一层索引，细节按需 `read_file` 加载；每个 skill 带版本号 + 自测命令，纳入测试闸门
 - 💾 **跨会话记忆**：`AGENT_STATE.json`（机器态）+ `MEMORY.md`（人类可读版）本地持久化（gitignore，不纳入版本控制），重启后能引用上次决策
 - 🛡️ **自修改安全**：`write_file` 落盘前自动 git 快照 + 返回行级 diff 摘要
 - ⚡ **Bun 原生执行**：脚本用 `Bun.spawn` 运行，`run_script` 默认沙箱 tmpdir，可指定工作区 cwd
@@ -32,17 +34,27 @@ bun run index.ts --stream "计算斐波那契数列第 30 项"   # SSE 流式输
 | `list_dir` | 列目录（`-a` 显示隐藏文件、`depth` 限制深度，最大 8） |
 | `run_bash` | 执行 shell 命令（cwd 默认工作区，超时可配） |
 
+## skills（组合操作库）
+
+| skill | 一句话 | 自测 |
+| --- | --- | --- |
+| `web-search` | 联网搜索（Bing 主路径 + DDG 降级），附真实 HTML 解析模板 | `bun run skills/web-search/self-test.ts` |
+
+加载方式：系统提示词 [能力] 区块只放上面的索引，需要时用 `read_file` 读 `skills/<name>/SKILL.md`。
+
 ## 项目结构
 
 ```
 ├── index.ts            # 入口：CLI 解析 + agent 主循环（保持轻量）
 ├── src/
 │   ├── tools.ts        # 工具注册表（新增工具在此注册）
-│   ├── context.ts      # 系统提示词组装：身份 + 项目 + 记忆 + 规则
+│   ├── context.ts      # 系统提示词组装：身份 + 能力 + 项目 + 记忆 + 规则
 │   ├── memory.ts       # 记忆读写：AGENT_STATE.json / MEMORY.md + 项目上下文
 │   └── git.ts          # write_file 前的安全快照
+├── skills/             # 组合操作库（SKILL.md + 实现 + 自测）
+│   └── web-search/     # 联网搜索 skill（search.ts / self-test.ts / samples/）
 ├── tests/
-│   └── tools.test.ts   # 12 个 self-test 用例（修改自身代码后的验证闸门）
+│   └── tools.test.ts   # 15 个 self-test 用例（修改自身代码后的验证闸门）
 ├── AGENT_STATE.json    # 机器可读记忆（本地持久化，gitignore）
 ├── MEMORY.md           # 人类可读记忆（本地持久化，gitignore）
 ├── blog.md             # agent 真实运行实录（自我进化过程）
@@ -61,7 +73,8 @@ bun run index.ts --stream "计算斐波那契数列第 30 项"   # SSE 流式输
 ## 自测
 
 ```bash
-bun test   # 12 个用例：工具层 + 记忆层，零外部依赖
+bun test   # 15 个用例：工具层 + 记忆层 + skills 层，零外部依赖
+bun run skills/web-search/self-test.ts --online   # web-search skill 在线实测（可选）
 ```
 
 ## 迭代路线
