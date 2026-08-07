@@ -24,6 +24,9 @@ if (!API_KEY) {
 const BASE_URL = "https://api.deepseek.com";
 const MODEL = "deepseek-v4-flash"; // 也可换成 deepseek-v4-pro
 const MAX_ITERATIONS = 150; // 防止 agent 无限循环
+// 工具输出截断上限（字符数）：模型上下文再大，工具输出也会永久累积进对话历史并在每轮重发，
+// 因此仍需截断防膨胀；默认 32K 字符（约 8~16K token），可用环境变量 RUN_SCRIPT_MAX_OUTPUT 覆盖。
+const MAX_OUTPUT_CHARS = Number(process.env.RUN_SCRIPT_MAX_OUTPUT ?? 32_000) || 32_000;
 
 // ---------- 命令行解析 ----------
 const args = process.argv.slice(2);
@@ -83,7 +86,7 @@ async function runScript(code: string): Promise<string> {
       proc.exited,
     ]);
     clearTimeout(timeout);
-    const clip = (s: string) => (s.length > 4000 ? s.slice(0, 4000) + "\n... (截断)" : s);
+    const clip = (s: string) => (s.length > MAX_OUTPUT_CHARS ? s.slice(0, MAX_OUTPUT_CHARS) + "\n... (截断)" : s);
     return JSON.stringify({ stdout: clip(stdout), stderr: clip(stderr), exitCode });
   } finally {
     await Bun.file(file).delete().catch(() => {});
